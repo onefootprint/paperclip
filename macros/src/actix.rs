@@ -1551,7 +1551,6 @@ fn handle_field_struct(
             .strip_prefix("r#")
             .map(|n| n.to_string())
             .unwrap_or(field_name);
-
         if SerdeSkip::exists(&field.attrs) {
             continue;
         }
@@ -1759,12 +1758,14 @@ impl SerdeSkip {
     /// dependent on finding the `#[serde(skip]` attribute.
     fn exists(field_attrs: &[Attribute]) -> bool {
         for meta in field_attrs.iter().filter_map(|a| a.parse_meta().ok()) {
+            // Check serde skip
+            // And also check for our own #[paperclip(skip)] attribute
             let inner_meta = match meta {
                 Meta::List(ref l)
                     if l.path
                         .segments
                         .last()
-                        .map(|p| p.ident == "serde")
+                        .map(|p| p.ident == "serde" || p.ident == "openapi")
                         .unwrap_or(false) =>
                 {
                     &l.nested
