@@ -1432,6 +1432,8 @@ fn handle_unnamed_field_struct(
             let docs = extract_documentation(&field.attrs);
             let docs = docs.trim();
 
+            let override_required = OpenApiRequired::exists(&field.attrs);
+
             let gen = if !SerdeFlatten::exists(&field.attrs) {
                 // this is really not what we'd want to do because that's not how the
                 // deserialized struct will be like, ideally we want an actual tuple
@@ -1442,7 +1444,7 @@ fn handle_unnamed_field_struct(
                         s.description = Some(#docs.to_string());
                     }
                     schema.properties.insert(#inner_field_id.to_string(), s.into());
-                    if #ty_ref::required() {
+                    if #ty_ref::required() || #override_required {
                         schema.required.insert(#inner_field_id.to_string());
                     }
                 })
@@ -1575,6 +1577,7 @@ fn handle_field_struct(
             quote!({})
         };
 
+        let override_required = OpenApiRequired::exists(&field.attrs);
         let gen = if !SerdeFlatten::exists(&field.attrs) {
             quote!({
                 let mut s = #ty_ref::raw_schema();
@@ -1584,7 +1587,7 @@ fn handle_field_struct(
                 #example;
                 schema.properties.insert(#field_name.into(), s.into());
 
-                if #ty_ref::required() {
+                if #ty_ref::required() || #override_required {
                     schema.required.insert(#field_name.into());
                 }
             })
@@ -1775,6 +1778,41 @@ impl SerdeSkip {
             for meta in inner_meta {
                 if let NestedMeta::Meta(Meta::Path(path)) = meta {
                     if path.segments.iter().any(|s| s.ident == "skip") {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        false
+    }
+}
+
+/// Custom attribute that sets this attribute as required, even if the type is not required.
+struct OpenApiRequired;
+
+impl OpenApiRequired {
+    /// Traverses the field attributes and returns whether the field should be skipped or not
+    /// dependent on finding the `#[serde(skip]` attribute.
+    fn exists(field_attrs: &[Attribute]) -> bool {
+        for meta in field_attrs.iter().filter_map(|a| a.parse_meta().ok()) {
+            // Check serde skip
+            // And also check for our own #[paperclip(skip)] attribute
+            let inner_meta = match meta {
+                Meta::List(ref l)
+                    if l.path
+                        .segments
+                        .last()
+                        .map(|p| p.ident == "openapi")
+                        .unwrap_or(false) =>
+                {
+                    &l.nested
+                }
+                _ => continue,
+            };
+            for meta in inner_meta {
+                if let NestedMeta::Meta(Meta::Path(path)) = meta {
+                    if path.segments.iter().any(|s| s.ident == "required") {
                         return true;
                     }
                 }
