@@ -48,7 +48,16 @@ pub fn api_v2_operation(attr: TokenStream, input: TokenStream) -> TokenStream {
 #[proc_macro_error]
 #[proc_macro_derive(Apiv2Schema, attributes(openapi))]
 pub fn api_v2_schema(input: TokenStream) -> TokenStream {
-    self::actix::emit_v2_definition(input)
+    self::actix::emit_v2_definition(input, false)
+}
+
+/// Footprint-specific macro
+/// Derive attribute for indicating that a type is an OpenAPI v2 compatible definition used as an HTTP response type.
+#[cfg(feature = "actix")]
+#[proc_macro_error]
+#[proc_macro_derive(Apiv2Response, attributes(openapi))]
+pub fn api_v2_response(input: TokenStream) -> TokenStream {
+    self::actix::emit_v2_definition(input, true)
 }
 
 /// Marker attribute for indicating that an object forbids public access to operation (for example AccessToken).

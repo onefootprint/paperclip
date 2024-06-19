@@ -761,7 +761,7 @@ fn extract_example(attrs: &[Attribute]) -> Option<String> {
 }
 
 /// Actual parser and emitter for `api_v2_schema` macro.
-pub fn emit_v2_definition(input: TokenStream) -> TokenStream {
+pub fn emit_v2_definition(input: TokenStream, for_response: bool) -> TokenStream {
     let item_ast = match crate::expect_struct_or_enum(input) {
         Ok(i) => i,
         Err(ts) => return ts,
@@ -795,7 +795,11 @@ pub fn emit_v2_definition(input: TokenStream) -> TokenStream {
         param.bounds.push(bound.clone().into());
     });
 
-    let opt_impl = add_optional_impl(name, &generics);
+    let operation_modifier_impl = if for_response {
+        add_response_operation_modifier_impl(name, &generics)
+    } else {
+        add_optional_impl(name, &generics)
+    };
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
     // FIXME: Use attr path segments to find flattening, skipping, etc.
@@ -930,7 +934,7 @@ pub fn emit_v2_definition(input: TokenStream) -> TokenStream {
             }
         }
 
-        #opt_impl
+        #operation_modifier_impl
     };
 
     gen.into()
@@ -1374,6 +1378,48 @@ fn add_optional_impl(name: &Ident, generics: &Generics) -> proc_macro2::TokenStr
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     quote! {
         impl #impl_generics paperclip::actix::OperationModifier for #name #ty_generics #where_clause {}
+    }
+}
+
+fn add_response_operation_modifier_impl(
+    name: &Ident,
+    generics: &Generics,
+) -> proc_macro2::TokenStream {
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    // Copied from core/src/v2/actix.rs
+    quote! {
+        impl #impl_generics paperclip::actix::OperationModifier for #name #ty_generics #where_clause {
+            fn update_parameter(op: &mut paperclip::v2::models::DefaultOperationRaw) {
+                op.parameters.push(paperclip::v2::models::Either::Right(paperclip::v2::models::Parameter {
+                    description: None,
+                    in_: paperclip::v2::models::ParameterIn::Body,
+                    name: "body".into(),
+                    required: true,
+                    schema: Some({
+                        let mut def = <Self as paperclip::v2::schema::Apiv2Schema>::schema_with_ref();
+                        def.retain_ref();
+                        def
+                    }),
+                    ..Default::default()
+                }));
+            }
+
+            fn update_response(op: &mut paperclip::v2::models::DefaultOperationRaw) {
+                op.responses.insert(
+                    "200".into(),
+                    paperclip::v2::models::Either::Right(paperclip::v2::models::Response {
+                        // TODO: Support configuring other 2xx codes using macro attribute.
+                        description: Some("OK".into()),
+                        schema: Some({
+                            let mut def = <Self as paperclip::v2::schema::Apiv2Schema>::schema_with_ref();
+                            def.retain_ref();
+                            def
+                        }),
+                        ..Default::default()
+                    }),
+                );
+            }
+        }
     }
 }
 
