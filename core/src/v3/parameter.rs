@@ -154,7 +154,7 @@ pub(crate) fn non_body_parameter_to_v3_parameter(
                     }))
                 }
             };
-            let schema_data = if form_data {
+            let mut schema_data = if form_data {
                 // formData has the description and default values in the schema's properties
                 openapiv3::SchemaData {
                     description: v2.description.clone(),
@@ -165,6 +165,9 @@ pub(crate) fn non_body_parameter_to_v3_parameter(
                 // properties set on the parameter and not on the schema's properties
                 openapiv3::SchemaData::default()
             };
+            // Pull the example off of the parameter's schema. Should the Parameter itself just be updated
+            // to have an example?
+            schema_data.example = v2.schema.as_ref().and_then(|s| s.example.clone());
             Some(openapiv3::Schema {
                 schema_data,
                 schema_kind,
