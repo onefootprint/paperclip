@@ -17,7 +17,7 @@ use syn::{
 };
 
 use proc_macro2::TokenStream as TokenStream2;
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 
 const SCHEMA_MACRO_ATTR: &str = "openapi";
 
@@ -760,6 +760,51 @@ fn extract_example(attrs: &[Attribute]) -> Option<String> {
     None
 }
 
+fn extract_serialize_as(attrs: &[Attribute]) -> Option<Type> {
+    let attrs = extract_openapi_attrs(attrs);
+    for attr in attrs.flat_map(|attr| attr.into_iter()) {
+        let nv = match attr {
+            NestedMeta::Meta(Meta::NameValue(nv)) if nv.path.is_ident("serialize_as") => nv,
+            _ => continue,
+        };
+        let Lit::Str(ref s) = nv.lit else {
+            emit_error!(
+                nv.lit.span().unwrap(),
+                format!(
+                    "`#[{}(serialize_as = \"...\")]` expects a string argument",
+                    SCHEMA_MACRO_ATTR
+                ),
+            );
+            return None;
+        };
+
+        let Ok(ts) = proc_macro::TokenStream::from_str(&s.value()) else {
+            emit_error!(
+                nv.lit.span().unwrap(),
+                format!(
+                    "`#[{}(serialize_as = \"...\")]` expects a string argument parseable as a tokenstream",
+                    SCHEMA_MACRO_ATTR
+                ),
+            );
+            return None;
+        };
+        let Ok(ty) = syn::parse::<Type>(ts) else {
+            emit_error!(
+                nv.lit.span().unwrap(),
+                format!(
+                    "`#[{}(serialize_as = \"...\")]` expects a string argument parseable as a Type",
+                    SCHEMA_MACRO_ATTR
+                ),
+            );
+            return None;
+        };
+
+        return Some(ty);
+    }
+
+    None
+}
+
 /// Actual parser and emitter for `api_v2_schema` macro.
 pub fn emit_v2_definition(input: TokenStream, for_response: bool) -> TokenStream {
     let item_ast = match crate::expect_struct_or_enum(input) {
@@ -1424,6 +1469,9 @@ fn add_response_operation_modifier_impl(
 }
 
 fn get_field_type(field: &Field) -> Option<proc_macro2::TokenStream> {
+    if let Some(serialize_as_ty) = extract_serialize_as(&field.attrs) {
+        return Some(address_type_for_fn_call(&serialize_as_ty));
+    }
     match field.ty {
         Type::Path(_) | Type::Reference(_) => Some(address_type_for_fn_call(&field.ty)),
         _ => {
@@ -1510,7 +1558,8 @@ fn handle_unnamed_field_struct(
     }
 }
 
-/// Checks for `api_v2_empty` attributes and removes them.
+/// Returns the nested meta for all `#[openapi(...)]`` attributes.
+/// For example, returns `skip` for #[openapi(skip)] and `serialize_as = Foo` for `#[openapi(serialize_as = Foo)]`
 fn extract_openapi_attrs(
     field_attrs: &'_ [Attribute],
 ) -> impl Iterator<Item = Punctuated<syn::NestedMeta, syn::token::Comma>> + '_ {
@@ -1841,31 +1890,13 @@ impl OpenApiRequired {
     /// Traverses the field attributes and returns whether the field should be skipped or not
     /// dependent on finding the `#[serde(skip]` attribute.
     fn exists(field_attrs: &[Attribute]) -> bool {
-        for meta in field_attrs.iter().filter_map(|a| a.parse_meta().ok()) {
-            // Check serde skip
-            // And also check for our own #[paperclip(skip)] attribute
-            let inner_meta = match meta {
-                Meta::List(ref l)
-                    if l.path
-                        .segments
-                        .last()
-                        .map(|p| p.ident == "openapi")
-                        .unwrap_or(false) =>
-                {
-                    &l.nested
+        extract_openapi_attrs(field_attrs).any(|nested| {
+            nested.len() == 1
+                && match &nested[0] {
+                    NestedMeta::Meta(Meta::Path(path)) => path.is_ident("required"),
+                    _ => false,
                 }
-                _ => continue,
-            };
-            for meta in inner_meta {
-                if let NestedMeta::Meta(Meta::Path(path)) = meta {
-                    if path.segments.iter().any(|s| s.ident == "required") {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        false
+        })
     }
 }
 
