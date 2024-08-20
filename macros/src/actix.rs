@@ -737,6 +737,52 @@ fn extract_rename(attrs: &[Attribute]) -> Option<String> {
     None
 }
 
+fn extract_openapi_gated(attrs: &[Attribute]) -> Option<syn::Expr> {
+    let attrs = extract_openapi_attrs(attrs);
+    for attr in attrs.flat_map(|attr| attr.into_iter()) {
+        let nv = match attr {
+            NestedMeta::Meta(Meta::NameValue(nv)) if nv.path.is_ident("gated") => nv,
+            _ => continue,
+        };
+        let Lit::Str(ref s) = nv.lit else {
+            emit_error!(
+                nv.lit.span().unwrap(),
+                format!(
+                    "`#[{}(gated = \"...\")]` expects a string argument",
+                    SCHEMA_MACRO_ATTR
+                ),
+            );
+            return None;
+        };
+
+        let Ok(ts) = proc_macro::TokenStream::from_str(&s.value()) else {
+            emit_error!(
+                nv.lit.span().unwrap(),
+                format!(
+                    "`#[{}(gated = \"...\")]` expects a string argument parseable as a tokenstream",
+                    SCHEMA_MACRO_ATTR
+                ),
+            );
+            return None;
+        };
+
+        let Ok(expr) = syn::parse::<syn::Expr>(ts) else {
+            emit_error!(
+                nv.lit.span().unwrap(),
+                format!(
+                    "`#[{}(gated = \"...\")]` expects a string argument parseable as an Expr",
+                    SCHEMA_MACRO_ATTR
+                ),
+            );
+            return None;
+        };
+
+        return Some(expr);
+    }
+
+    None
+}
+
 fn extract_example(attrs: &[Attribute]) -> Option<String> {
     let attrs = extract_openapi_attrs(attrs);
     for attr in attrs.flat_map(|attr| attr.into_iter()) {
@@ -1663,6 +1709,13 @@ fn handle_field_struct(
         let docs = extract_documentation(&field.attrs);
         let docs = docs.trim();
 
+        // Serialize a custom `x_fp_preview_gate` field that communicates which preview API is needed in order to render this field.
+        let gated = if let Some(gated) = extract_openapi_gated(&field.attrs) {
+            quote!({ s.extensions.insert("x_fp_preview_gate".to_string(), serde_json::Value::String(#gated.to_string())) })
+        } else {
+            quote!({})
+        };
+
         let example = if let Some(example) = extract_example(&field.attrs) {
             // allow to parse escaped json string or single str value
             quote!({
@@ -1679,6 +1732,7 @@ fn handle_field_struct(
                 if !#docs.is_empty() {
                     s.description = Some(#docs.to_string());
                 }
+                #gated;
                 #example;
                 schema.properties.insert(#field_name.into(), s.into());
 
