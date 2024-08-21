@@ -63,6 +63,9 @@ pub fn emit_v2_schema_struct(input: TokenStream) -> TokenStream {
                 self.properties.values_mut().for_each(|s| s.remove_refs());
                 self.items.as_mut().map(|s| s.remove_refs());
                 self.extra_props.as_mut().and_then(|s| s.right_mut()).map(|s| s.remove_refs());
+                for s in &mut self.any_of {
+                    s.remove_refs();
+                }
                 self.reference = None;
             }
 
@@ -77,6 +80,9 @@ pub fn emit_v2_schema_struct(input: TokenStream) -> TokenStream {
                     self.properties.values_mut().for_each(|s| s.retain_ref());
                     self.items.as_mut().map(|s| s.retain_ref());
                     self.extra_props.as_mut().and_then(|s| s.right_mut()).map(|s| s.retain_ref());
+                    for s in &mut self.any_of {
+                        s.retain_ref();
+                    }
                 }
             }
         }

@@ -42,6 +42,26 @@ impl From<v2::DefaultSchemaRaw> for openapiv3::ReferenceOr<openapiv3::Schema> {
                                 &v2.properties,
                                 &v2.required,
                             )
+                        } else if !v2.any_of.is_empty() {
+                            let any_of = (v2.any_of)
+                                .into_iter()
+                                .map(|v2| openapiv3::ReferenceOr::<openapiv3::Schema>::from(*v2))
+                                .collect();
+                            openapiv3::SchemaKind::AnyOf {
+                                any_of,
+                            }
+                        } else if let Some(c) = v2.const_ {
+                            match c {
+                                serde_json::Value::String(s) => openapiv3::SchemaKind::Type(
+                                    openapiv3::Type::String(openapiv3::StringType {
+                                        enumeration: vec![Some(s)],
+                                        ..Default::default()
+                                    }),
+                                ),
+                                _ => openapiv3::SchemaKind::Type(openapiv3::Type::Object(
+                                    openapiv3::ObjectType::default(),
+                                )),
+                            }
                         } else {
                             openapiv3::SchemaKind::Type(openapiv3::Type::Object(
                                 openapiv3::ObjectType::default(),
