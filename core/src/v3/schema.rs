@@ -30,7 +30,7 @@ impl From<v2::DefaultSchemaRaw> for openapiv3::ReferenceOr<openapiv3::Schema> {
                         description: v2.description,
                         discriminator: None,
                         default: None,
-                        extensions: indexmap::IndexMap::new(),
+                        extensions: v2.extensions,
                     },
                     schema_kind: {
                         if let Some(data_type) = v2.data_type {

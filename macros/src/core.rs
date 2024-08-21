@@ -316,6 +316,12 @@ fn schema_fields(name: &Ident, is_ref: bool) -> proc_macro2::TokenStream {
     gen.extend(quote!(>>,));
 
     gen.extend(quote!(
+        #[serde(skip)]
+        /// Additional custom key-value pairs that are serialized on the open API v3 spec.
+        pub extensions: indexmap::IndexMap<String, serde_json::Value>,
+    ));
+
+    gen.extend(quote!(
         #[serde(default, skip_serializing_if = "std::collections::BTreeSet::is_empty")]
         pub required: std::collections::BTreeSet<String>,
     ));
