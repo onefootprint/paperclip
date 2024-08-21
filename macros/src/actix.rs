@@ -737,28 +737,6 @@ fn extract_rename(attrs: &[Attribute]) -> Option<String> {
     None
 }
 
-fn extract_openapi_gated(attrs: &[Attribute]) -> Option<String> {
-    let attrs = extract_openapi_attrs(attrs);
-    for attr in attrs.flat_map(|attr| attr.into_iter()) {
-        if let NestedMeta::Meta(Meta::NameValue(nv)) = attr {
-            if nv.path.is_ident("gated") {
-                if let Lit::Str(s) = nv.lit {
-                    return Some(s.value());
-                } else {
-                    emit_error!(
-                        nv.lit.span().unwrap(),
-                        format!(
-                            "`#[{}(gated = \"...\")]` expects a string argument",
-                            SCHEMA_MACRO_ATTR
-                        ),
-                    );
-                }
-            }
-        }
-    }
-    None
-}
-
 fn extract_example(attrs: &[Attribute]) -> Option<String> {
     let attrs = extract_openapi_attrs(attrs);
     for attr in attrs.flat_map(|attr| attr.into_iter()) {
@@ -1683,16 +1661,7 @@ fn handle_field_struct(
         let ty_ref = get_field_type(field);
 
         let docs = extract_documentation(&field.attrs);
-
-        // Add some context to the description that describes when a field is gated behind a preview API.
-        // The description is rendered as markdown, so we serialize the feature gating information inside a
-        // markdown comment so it won't be rendered on the docs site.
-        let gated = extract_openapi_gated(&field.attrs);
-        let gated_line = gated
-            .map(|g| format!("[gated({})]: <>\n", g))
-            .unwrap_or_default();
-
-        let docs = format!("{}{}", gated_line, docs.trim());
+        let docs = docs.trim();
 
         let example = if let Some(example) = extract_example(&field.attrs) {
             // allow to parse escaped json string or single str value
