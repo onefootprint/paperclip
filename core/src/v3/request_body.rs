@@ -18,7 +18,7 @@ impl From<v2::DefaultParameterRaw>
                     v2
                 ))),
             },
-            example: schema.as_ref().and_then(|s| s.schema_data.example.clone()),
+            example: None,
             examples: indexmap::IndexMap::new(),
             explode: None,
             extensions: indexmap::IndexMap::new(),
