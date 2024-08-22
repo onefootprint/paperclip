@@ -844,6 +844,9 @@ pub struct Header {
     pub unique_items: Option<bool>,
     #[serde(rename = "multipleOf", skip_serializing_if = "Option::is_none")]
     pub multiple_of: Option<f32>,
+    /// Inline extensions to this object.
+    #[serde(skip)]
+    pub extensions: indexmap::IndexMap<String, serde_json::Value>,
 }
 
 /// The HTTP method used for an operation.

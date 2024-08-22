@@ -9,7 +9,7 @@ impl From<v2::Header> for openapiv3::Header {
             deprecated: None,
             format: openapiv3::ParameterSchemaOrContent::Content(indexmap::IndexMap::new()),
             example: None,
-            extensions: indexmap::IndexMap::new(),
+            extensions: v2.extensions,
             examples: indexmap::IndexMap::new(),
         }
     }
