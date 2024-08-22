@@ -539,6 +539,11 @@ pub struct Parameter<S> {
     pub multiple_of: Option<f32>,
     #[serde(default, rename = "enum", skip_serializing_if = "Vec::is_empty")]
     pub enum_: Vec<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub example: Option<serde_json::Value>,
+    /// Inline extensions to this object.
+    #[serde(skip)]
+    pub extensions: indexmap::IndexMap<String, serde_json::Value>,
 }
 
 /// Items object.

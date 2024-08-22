@@ -165,9 +165,10 @@ pub(crate) fn non_body_parameter_to_v3_parameter(
                 // properties set on the parameter and not on the schema's properties
                 openapiv3::SchemaData::default()
             };
-            // Pull the example off of the parameter's schema. Should the Parameter itself just be updated
-            // to have an example?
-            schema_data.example = v2.schema.as_ref().and_then(|s| s.example.clone());
+
+            schema_data.example = v2.example.clone();
+            schema_data.extensions = v2.extensions.clone();
+
             Some(openapiv3::Schema {
                 schema_data,
                 schema_kind,
