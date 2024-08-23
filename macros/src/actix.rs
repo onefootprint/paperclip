@@ -1573,6 +1573,7 @@ fn handle_unnamed_field_struct(
             let docs = docs.trim();
 
             let override_required = OpenApiRequired::exists(&field.attrs);
+            let override_optional = OpenApiOptional::exists(&field.attrs);
 
             let gen = if !SerdeFlatten::exists(&field.attrs) {
                 // this is really not what we'd want to do because that's not how the
@@ -1584,7 +1585,7 @@ fn handle_unnamed_field_struct(
                         s.description = Some(#docs.to_string());
                     }
                     schema.properties.insert(#inner_field_id.to_string(), s.into());
-                    if #ty_ref::required() || #override_required {
+                    if (#ty_ref::required() || #override_required) && !#override_optional {
                         schema.required.insert(#inner_field_id.to_string());
                     }
                 })
@@ -1726,6 +1727,7 @@ fn handle_field_struct(
         };
 
         let override_required = OpenApiRequired::exists(&field.attrs);
+        let override_optional = OpenApiOptional::exists(&field.attrs);
         let gen = if !SerdeFlatten::exists(&field.attrs) {
             quote!({
                 let mut s = #ty_ref::raw_schema();
@@ -1736,7 +1738,7 @@ fn handle_field_struct(
                 #example;
                 schema.properties.insert(#field_name.into(), s.into());
 
-                if #ty_ref::required() || #override_required {
+                if (#ty_ref::required() || #override_required) && !#override_optional {
                     schema.required.insert(#field_name.into());
                 }
             })
@@ -1948,6 +1950,23 @@ impl OpenApiRequired {
             nested.len() == 1
                 && match &nested[0] {
                     NestedMeta::Meta(Meta::Path(path)) => path.is_ident("required"),
+                    _ => false,
+                }
+        })
+    }
+}
+
+/// Custom attribute that sets this attribute as optional, even if the type is not optional.
+struct OpenApiOptional;
+
+impl OpenApiOptional {
+    /// Traverses the field attributes and returns whether the field should be skipped or not
+    /// dependent on finding the `#[serde(skip]` attribute.
+    fn exists(field_attrs: &[Attribute]) -> bool {
+        extract_openapi_attrs(field_attrs).any(|nested| {
+            nested.len() == 1
+                && match &nested[0] {
+                    NestedMeta::Meta(Meta::Path(path)) => path.is_ident("optional"),
                     _ => false,
                 }
         })
