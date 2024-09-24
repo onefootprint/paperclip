@@ -322,8 +322,9 @@ where
     T: Apiv2Schema,
 {
     fn update_parameter(op: &mut DefaultOperationRaw) {
+        let description = T::description().to_owned();
         op.parameters.push(Either::Right(Parameter {
-            description: None,
+            description: (!description.is_empty()).then_some(description),
             in_: ParameterIn::Body,
             name: "body".into(),
             required: true,

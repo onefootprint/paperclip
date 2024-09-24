@@ -1481,8 +1481,9 @@ fn add_response_operation_modifier_impl(
     quote! {
         impl #impl_generics paperclip::actix::OperationModifier for #name #ty_generics #where_clause {
             fn update_parameter(op: &mut paperclip::v2::models::DefaultOperationRaw) {
+                let description = <Self as paperclip::v2::schema::Apiv2Schema>::description().to_owned();
                 op.parameters.push(paperclip::v2::models::Either::Right(paperclip::v2::models::Parameter {
-                    description: None,
+                    description: (!description.is_empty()).then_some(description),
                     in_: paperclip::v2::models::ParameterIn::Body,
                     name: "body".into(),
                     required: true,
