@@ -1554,7 +1554,7 @@ fn handle_unnamed_field_struct(
                 }));
             } else {
                 props_gen.extend(quote!({
-                    let mut s = #ty_ref::raw_schema();
+                    let mut s = #ty_ref::schema_with_ref();
                     if !#docs.is_empty() {
                         s.description = Some(#docs.to_string());
                     }
@@ -1581,7 +1581,7 @@ fn handle_unnamed_field_struct(
                 // deserialized struct will be like, ideally we want an actual tuple
                 // this type should therefore not be used for anything else than `Path`
                 quote!({
-                    let mut s = #ty_ref::raw_schema();
+                    let mut s = #ty_ref::schema_with_ref();
                     if !#docs.is_empty() {
                         s.description = Some(#docs.to_string());
                     }
@@ -1592,7 +1592,7 @@ fn handle_unnamed_field_struct(
                 })
             } else {
                 quote!({
-                    let s = #ty_ref::raw_schema();
+                    let s = #ty_ref::schema_with_ref();
                     schema.properties.extend(s.properties);
 
                     if #ty_ref::required() {
@@ -1731,7 +1731,7 @@ fn handle_field_struct(
         let override_optional = OpenApiOptional::exists(&field.attrs);
         let gen = if !SerdeFlatten::exists(&field.attrs) {
             quote!({
-                let mut s = #ty_ref::raw_schema();
+                let mut s = #ty_ref::schema_with_ref();
                 if !#docs.is_empty() {
                     s.description = Some(#docs.to_string());
                 }
@@ -1745,7 +1745,7 @@ fn handle_field_struct(
             })
         } else {
             quote!({
-                let s = #ty_ref::raw_schema();
+                let s = #ty_ref::schema_with_ref();
                 schema.properties.extend(s.properties);
 
                 if #ty_ref::required() {
