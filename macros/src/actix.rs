@@ -1851,9 +1851,14 @@ fn handle_enum(
                     handle_field_struct(f, &[], serde, &mut inner_gen);
                 }
                 Fields::Unnamed(ref f) => {
-                    // Fix this once handle_unnamed_field_struct does actually create arrays
-                    emit_warning!(f.span().unwrap(), "skipping tuple enum variant in schema.");
-                    continue;
+                    inner_gen.extend(quote!(
+                        let mut schema = DefaultSchemaRaw {
+                            data_type: Some(DataType::Object),
+                            description: if #docs.is_empty() { None } else { Some(#docs.into()) },
+                            ..Default::default()
+                        };
+                    ));
+                    handle_unnamed_field_struct(f, &var.attrs, &mut inner_gen);
                 }
             }
 
