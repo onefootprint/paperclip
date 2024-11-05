@@ -1771,9 +1771,9 @@ fn handle_enum(
 
     // check if all variants are simple constants and can use `enum`
     // otherwise we'll make use of `any_of`
+    let variants = e.variants.iter().filter(|v| !SerdeSkip::exists(&v.attrs)).collect::<Vec<_>>();
     let only_simple_constants = simple_constants
-        && !e
-            .variants
+        && !variants
             .iter()
             .any(|variant| variant.fields != Fields::Unit);
     if only_simple_constants {
@@ -1791,7 +1791,7 @@ fn handle_enum(
         ));
     }
 
-    for var in &e.variants {
+    for var in &variants {
         if SerdeSkip::exists(&var.attrs) {
             continue;
         }
