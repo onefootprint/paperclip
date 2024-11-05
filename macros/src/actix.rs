@@ -806,6 +806,21 @@ fn extract_example(attrs: &[Attribute]) -> Option<String> {
     None
 }
 
+fn extract_is_inline(attrs: &[Attribute]) -> bool {
+    let attrs = extract_openapi_attrs(attrs);
+    for attr in attrs.flat_map(|attr| attr.into_iter()) {
+        if let NestedMeta::Meta(Meta::Path(attr_path)) = attr {
+            if let Some(attr) = attr_path.get_ident() {
+                if *attr == "inline" {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
+}
+
 fn extract_serialize_as(attrs: &[Attribute]) -> Option<Type> {
     let attrs = extract_openapi_attrs(attrs);
     for attr in attrs.flat_map(|attr| attr.into_iter()) {
@@ -940,21 +955,23 @@ pub fn emit_v2_definition(input: TokenStream, for_response: bool) -> TokenStream
     };
     let props_gen_empty = props_gen.is_empty();
 
-    #[cfg(not(feature = "path-in-definition"))]
-    let default_schema_raw_def = quote! {
-        let mut schema = DefaultSchemaRaw {
-            name: Some(#schema_name.into()),
-            example: #example,
-            ..Default::default()
-        };
+    let is_inline = extract_is_inline(&item_ast.attrs);
+    let open_api_name = if is_inline {
+        // If the struct is marked as "inline", we omit generating a name. This makes it so we cannot refer
+        // to the schema by name, so we will always inline its definition
+        quote!{ None }
+    } else {
+        #[cfg(not(feature = "path-in-definition"))]
+        quote! { Some(#schema_name.into()) }
+        #[cfg(feature = "path-in-definition")]
+        quote! { Some(Self::__paperclip_schema_name()) }
     };
 
-    #[cfg(feature = "path-in-definition")]
     let default_schema_raw_def = quote! {
         let mut schema = DefaultSchemaRaw {
-            name: Some(Self::__paperclip_schema_name()), // Add name for later use.
+            name: #open_api_name,
             example: #example,
-            .. Default::default()
+            ..Default::default()
         };
     };
 
@@ -980,22 +997,13 @@ pub fn emit_v2_definition(input: TokenStream, for_response: bool) -> TokenStream
     #[cfg(not(feature = "path-in-definition"))]
     let const_name_def = quote! {
         fn name() -> Option<String> {
-            Some(#schema_name.to_string())
+            #open_api_name
         }
     };
 
+    // TODO: not sure why this doesn't define the name() fn
     #[cfg(feature = "path-in-definition")]
     let const_name_def = quote!();
-
-    #[cfg(not(feature = "path-in-definition"))]
-    let props_gen_empty_name_def = quote! {
-        schema.name = Some(#schema_name.into());
-    };
-
-    #[cfg(feature = "path-in-definition")]
-    let props_gen_empty_name_def = quote! {
-        schema.name = Some(Self::__paperclip_schema_name());
-    };
 
     let gen = quote! {
         impl #impl_generics #name #ty_generics #where_clause {
@@ -1019,7 +1027,7 @@ pub fn emit_v2_definition(input: TokenStream, for_response: bool) -> TokenStream
                 // as it replaces the struct type with inner type.
                 // make sure we set the name properly if props_gen is not empty
                 if !#props_gen_empty {
-                    #props_gen_empty_name_def
+                    schema.name = #open_api_name;
                 }
                 schema
             }
