@@ -722,9 +722,11 @@ where
         } else if let Some(Either::Right(s)) = schema.extra_props {
             schema = *s;
             continue;
-        } else if let Some(n) = schema.name.take() {
-            schema.remove_refs();
-            map.insert(n, schema);
+        } else if schema.name.is_some() {
+            let removed_refs = schema.remove_refs();
+            for (n, schema) in removed_refs {
+                map.insert(n, schema);
+            }
         }
 
         break;

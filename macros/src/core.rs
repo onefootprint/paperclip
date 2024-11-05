@@ -59,14 +59,29 @@ pub fn emit_v2_schema_struct(input: TokenStream) -> TokenStream {
 
         impl #raw_struct_name {
             /// Recursively removes all `$ref` values in this schema.
-            pub fn remove_refs(&mut self) {
-                self.properties.values_mut().for_each(|s| s.remove_refs());
-                self.items.as_mut().map(|s| s.remove_refs());
-                self.extra_props.as_mut().and_then(|s| s.right_mut()).map(|s| s.remove_refs());
-                for s in &mut self.any_of {
-                    s.remove_refs();
+            /// Returns a list of removed refs and the corresponding schema for that ref.
+            pub fn remove_refs(&mut self) -> Vec<(String, Self)> {
+                let mut removed_refs = vec![];
+
+                if self.reference.is_some() {
+                    self.reference = None;
+                    removed_refs.push((self.name.clone().unwrap(), self.clone()));
                 }
-                self.reference = None;
+
+                for s in self.properties.values_mut() {
+                    removed_refs.extend(s.remove_refs());
+                }
+                if let Some(s) = self.items.as_mut() {
+                        removed_refs.extend(s.remove_refs());
+                }
+                if let Some(s) = self.extra_props.as_mut().and_then(|s| s.right_mut()) {
+                    removed_refs.extend(s.remove_refs());
+                }
+                for s in &mut self.any_of {
+                    removed_refs.extend(s.remove_refs());
+                }
+
+                removed_refs
             }
 
             /// Recursively removes all properties other than `$ref` value
