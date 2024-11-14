@@ -1561,8 +1561,14 @@ fn handle_unnamed_field_struct(
                     schema = s;
                 }));
             } else {
+                let inline = OpenApiInline::exists(&field.attrs);
+                let schema_ref = if inline {
+                    quote!(#ty_ref::raw_schema())
+                } else {
+                    quote!(#ty_ref::schema_with_ref())
+                };
                 props_gen.extend(quote!({
-                    let mut s = #ty_ref::schema_with_ref();
+                    let mut s = #schema_ref;
                     if !#docs.is_empty() {
                         s.description = Some(#docs.to_string());
                     }
@@ -1583,13 +1589,19 @@ fn handle_unnamed_field_struct(
 
             let override_required = OpenApiRequired::exists(&field.attrs);
             let override_optional = OpenApiOptional::exists(&field.attrs);
+            let inline = OpenApiInline::exists(&field.attrs);
+            let schema_ref = if inline {
+                quote!(#ty_ref::raw_schema())
+            } else {
+                quote!(#ty_ref::schema_with_ref())
+            };
 
             let gen = if !SerdeFlatten::exists(&field.attrs) {
                 // this is really not what we'd want to do because that's not how the
                 // deserialized struct will be like, ideally we want an actual tuple
                 // this type should therefore not be used for anything else than `Path`
                 quote!({
-                    let mut s = #ty_ref::schema_with_ref();
+                    let mut s = #schema_ref;
                     if !#docs.is_empty() {
                         s.description = Some(#docs.to_string());
                     }
@@ -1600,7 +1612,7 @@ fn handle_unnamed_field_struct(
                 })
             } else {
                 quote!({
-                    let s = #ty_ref::schema_with_ref();
+                    let s = #schema_ref;
                     schema.properties.extend(s.properties);
 
                     if #ty_ref::required() {
@@ -1737,9 +1749,15 @@ fn handle_field_struct(
 
         let override_required = OpenApiRequired::exists(&field.attrs);
         let override_optional = OpenApiOptional::exists(&field.attrs);
+        let inline = OpenApiInline::exists(&field.attrs);
+        let schema_ref = if inline {
+            quote!(#ty_ref::raw_schema())
+        } else {
+            quote!(#ty_ref::schema_with_ref())
+        };
         let gen = if !SerdeFlatten::exists(&field.attrs) {
             quote!({
-                let mut s = #ty_ref::schema_with_ref();
+                let mut s = #schema_ref;
                 if !#docs.is_empty() {
                     s.description = Some(#docs.to_string());
                 }
@@ -1753,7 +1771,7 @@ fn handle_field_struct(
             })
         } else {
             quote!({
-                let s = #ty_ref::schema_with_ref();
+                let s = #schema_ref;
                 schema.properties.extend(s.properties);
 
                 if #ty_ref::required() {
@@ -2127,6 +2145,23 @@ impl OpenApiOptional {
             nested.len() == 1
                 && match &nested[0] {
                     NestedMeta::Meta(Meta::Path(path)) => path.is_ident("optional"),
+                    _ => false,
+                }
+        })
+    }
+}
+
+/// Custom attribute that sets this attribute as optional, even if the type is not optional.
+struct OpenApiInline;
+
+impl OpenApiInline {
+    /// Traverses the field attributes and returns whether the field should be defined inline instead of
+    /// as a reference.
+    fn exists(field_attrs: &[Attribute]) -> bool {
+        extract_openapi_attrs(field_attrs).any(|nested| {
+            nested.len() == 1
+                && match &nested[0] {
+                    NestedMeta::Meta(Meta::Path(path)) => path.is_ident("inline"),
                     _ => false,
                 }
         })
