@@ -1734,19 +1734,21 @@ fn handle_field_struct(
         let docs = docs.trim();
 
         // Serialize a custom `x_fp_preview_gate` field that communicates which preview API is needed in order to render this field.
-        let gated = if let Some(gated) = extract_openapi_gated(&field.attrs) {
-            quote!({ s.extensions.insert("x_fp_preview_gate".to_string(), serde_json::Value::String(#gated.to_string())) })
+        let extensions = if let Some(gated) = extract_openapi_gated(&field.attrs) {
+            quote!(
+                s.extensions.insert("x_fp_preview_gate".to_string(), serde_json::Value::String(#gated.to_string()));
+            )
         } else {
-            quote!({})
+            quote!()
         };
 
         let example = if let Some(example) = extract_example(&field.attrs) {
             // allow to parse escaped json string or single str value
-            quote!({
+            quote!(
                 s.example = serde_json::from_str::<serde_json::Value>(#example).ok().or_else(|| Some(#example.into()));
-            })
+            )
         } else {
-            quote!({})
+            quote!()
         };
 
         let override_required = OpenApiRequired::exists(&field.attrs);
@@ -1757,16 +1759,49 @@ fn handle_field_struct(
         } else {
             quote!(#ty_ref::schema_with_ref())
         };
-        let gen = if !SerdeFlatten::exists(&field.attrs) {
-            quote!({
-                let mut s = #schema_ref;
-                if !#docs.is_empty() {
-                    s.description = Some(#docs.to_string());
-                }
-                #gated;
-                #example;
-                schema.properties.insert(#field_name.into(), s.into());
 
+        let gen = if !SerdeFlatten::exists(&field.attrs) {
+            let has_override_fields = !docs.is_empty() || !extensions.is_empty() || !example.is_empty();
+
+            let s_definition = if has_override_fields {
+                quote!(
+                    let mut s = #schema_ref;
+                    if s.name.is_some() {
+                        // Schema is a complex type referred to by a reference.
+                        // Use allOf to allow overriding fields like description, example, etc
+                        s = DefaultSchemaRaw::default();
+                        s.all_of.push({
+                            let original_s = #schema_ref;
+                            Box::new(original_s)
+                        });
+                        s.all_of.push({
+                            // Add additional fields as a separate schema
+                            let mut s = DefaultSchemaRaw::default();
+                            s.data_type = #schema_ref.data_type;
+                            if !#docs.is_empty() {
+                                s.description = Some(#docs.to_string());
+                            }
+                            #extensions
+                            #example
+                            Box::new(s)
+                        });
+                    } else {
+                        // The main schema is a simple type, can just add additional fields inline
+                        if !#docs.is_empty() {
+                            s.description = Some(#docs.to_string());
+                        }
+                        #extensions
+                        #example
+                    }
+                )
+            } else {
+                quote!(
+                    let s = #schema_ref;
+                )
+            };
+            quote!({
+                #s_definition
+                schema.properties.insert(#field_name.into(), s.into());
                 if (#ty_ref::required() || #override_required) && !#override_optional {
                     schema.required.insert(#field_name.into());
                 }
@@ -1775,7 +1810,6 @@ fn handle_field_struct(
             quote!({
                 let s = #schema_ref;
                 schema.properties.extend(s.properties);
-
                 if #ty_ref::required() {
                     schema.required.extend(s.required);
                 }

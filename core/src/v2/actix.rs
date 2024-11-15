@@ -455,7 +455,13 @@ macro_rules! impl_param_extractor ({ $ty:ty => $container:ident } => {
                     ..Default::default()
                 }));
             }
-            for (k, v) in def.properties {
+            let mut properties = std::collections::BTreeMap::new();
+            properties.extend(def.properties);
+            for v in def.all_of {
+                // If the parameter is an allOf, merge the properties
+                properties.extend(v.properties);
+            }
+            for (k, v) in properties {
                 op.parameters.push(Either::Right(Parameter {
                     in_: ParameterIn::$container,
                     required: def.required.contains(&k),
