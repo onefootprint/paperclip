@@ -80,6 +80,9 @@ pub fn emit_v2_schema_struct(input: TokenStream) -> TokenStream {
                 for s in &mut self.any_of {
                     removed_refs.extend(s.remove_refs());
                 }
+                for s in &mut self.all_of {
+                    removed_refs.extend(s.remove_refs());
+                }
 
                 removed_refs
             }
@@ -96,6 +99,9 @@ pub fn emit_v2_schema_struct(input: TokenStream) -> TokenStream {
                     self.items.as_mut().map(|s| s.retain_ref());
                     self.extra_props.as_mut().and_then(|s| s.right_mut()).map(|s| s.retain_ref());
                     for s in &mut self.any_of {
+                        s.retain_ref();
+                    }
+                    for s in &mut self.all_of {
                         s.retain_ref();
                     }
                 }
@@ -210,6 +216,15 @@ pub fn emit_v2_schema_struct(input: TokenStream) -> TokenStream {
                     None
                 } else {
                     Some(&self.any_of)
+                }
+            }
+
+            #[inline]
+            fn all_of(&self) -> Option<&Vec<paperclip::v2::models::Resolvable<Self>>> {
+                if self.all_of.is_empty() {
+                    None
+                } else {
+                    Some(&self.all_of)
                 }
             }
 
@@ -346,6 +361,13 @@ fn schema_fields(name: &Ident, is_ref: bool) -> proc_macro2::TokenStream {
     gen.extend(quote!(
         #[serde(default, rename = "anyOf", skip_serializing_if = "Vec::is_empty")]
         pub any_of: Vec<
+    ));
+    add_self(&mut gen);
+    gen.extend(quote!(>,));
+
+    gen.extend(quote!(
+        #[serde(default, rename = "allOf", skip_serializing_if = "Vec::is_empty")]
+        pub all_of: Vec<
     ));
     add_self(&mut gen);
     gen.extend(quote!(>,));

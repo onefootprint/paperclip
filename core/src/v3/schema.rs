@@ -50,6 +50,14 @@ impl From<v2::DefaultSchemaRaw> for openapiv3::ReferenceOr<openapiv3::Schema> {
                             openapiv3::SchemaKind::AnyOf {
                                 any_of,
                             }
+                        } else if !v2.all_of.is_empty() {
+                            let all_of = (v2.all_of)
+                                .into_iter()
+                                .map(|v2| openapiv3::ReferenceOr::<openapiv3::Schema>::from(*v2))
+                                .collect();
+                            openapiv3::SchemaKind::AllOf {
+                                all_of,
+                            }
                         } else if let Some(c) = v2.const_ {
                             match c {
                                 serde_json::Value::String(s) => openapiv3::SchemaKind::Type(

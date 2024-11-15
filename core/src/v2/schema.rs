@@ -57,6 +57,9 @@ pub trait Schema: Sized {
     /// More complex enum variants, where each has it's own schema.
     fn any_of(&self) -> Option<&Vec<Resolvable<Self>>>;
 
+    /// Types that are composed by unioning multiple sub-types with their own schemas.
+    fn all_of(&self) -> Option<&Vec<Resolvable<Self>>>;
+
     /// A constant value for this schema. It's `serde_json::Value`
     /// because:
     ///
