@@ -1546,6 +1546,7 @@ fn handle_unnamed_field_struct(
     props_gen: &mut proc_macro2::TokenStream,
 ) {
     if fields.unnamed.len() == 1 {
+        // Tuple with only one element
         let field = fields.unnamed.iter().next().unwrap();
 
         if let Some(ty_ref) = get_field_type(field) {
@@ -1577,6 +1578,7 @@ fn handle_unnamed_field_struct(
             }
         }
     } else {
+        // Tuple with multiple elements
         for (inner_field_id, field) in fields.unnamed.iter().enumerate() {
             if SerdeSkip::exists(&field.attrs) {
                 continue;
@@ -1907,17 +1909,47 @@ fn handle_enum(
                     ));
                 }
                 SerdeEnumTagType::Internal(ref tag) => {
-                    props_gen.extend(quote!(
-                        schema.any_of.push({
-                            #inner_gen
-                            schema.properties.insert(#tag.into(), DefaultSchemaRaw {
-                                const_: Some(serde_json::json!(#name)),
-                                ..Default::default()
+                    if inner_gen_empty {
+                        // No need to wrap in an allOf since there is no inner data
+                        props_gen.extend(quote!(
+                            schema.any_of.push({
+                                #inner_gen
+                                schema.properties.insert(#tag.into(), DefaultSchemaRaw {
+                                    const_: Some(serde_json::json!(#name)),
+                                    ..Default::default()
+                                }.into());
+                                schema.required.insert(#tag.into());
+                                schema
                             }.into());
-                            schema.required.insert(#tag.into());
-                            schema
-                        }.into());
-                    ));
+                        ));
+                    } else {
+                        // The schema of the nested data might be shared. To avoid mutating it, represent the
+                        // internal tag as a separate schema in an allOf.
+                        props_gen.extend(quote!(
+                            schema.any_of.push({
+                                let mut wrapper_schema = DefaultSchemaRaw::default();
+                                // Inner nested data
+                                wrapper_schema.all_of.push({
+                                    #inner_gen
+                                    Box::new(schema)
+                                });
+                                // Tag
+                                wrapper_schema.all_of.push({
+                                    let mut tag_schema = DefaultSchemaRaw {
+                                        data_type: Some(DataType::Object),
+                                        ..Default::default()
+                                    };
+                                    tag_schema.properties.insert(#tag.into(), DefaultSchemaRaw {
+                                        const_: Some(serde_json::json!(#name)),
+                                        ..Default::default()
+                                    }.into());
+                                    tag_schema.required.insert(#tag.into());
+                                    Box::new(tag_schema)
+                                });
+                                Box::new(wrapper_schema)
+                            }.into());
+                        ));
+                    }
                 }
                 SerdeEnumTagType::Adjacent(ref tag, ref content_tag) => {
                     // if the variant schema is empty, we don't need the content tag
@@ -2176,9 +2208,13 @@ struct SerdeProps {
 
 #[derive(Clone, Debug, PartialEq)]
 enum SerdeEnumTagType {
+    /// Default tag type. Enum variant name is used as the tag.
     External,
+    /// When tag is provided and data tag is not
     Internal(String),
+    /// When both tag and data tag are provided
     Adjacent(String, String),
+    /// Enum variant name is not used.
     Untagged,
 }
 
