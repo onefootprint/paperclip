@@ -1539,6 +1539,75 @@ fn get_field_type(field: &Field) -> Option<proc_macro2::TokenStream> {
     }
 }
 
+/// Given the attributes of a struct, generates a TokenStream that adds `description`, `extensions`, and `example` to a schema named `s`
+fn extract_metadata(attrs: &[Attribute]) -> TokenStream2 {
+    let docs = extract_documentation(attrs);
+    let docs = docs.trim();
+
+    let docs = if !docs.is_empty() {
+        quote!(s.description = Some(#docs.to_string());)
+    } else {
+        quote!()
+    };
+
+    // Serialize a custom `x_fp_preview_gate` field that communicates which preview API is needed in order to render this field.
+    let extensions = if let Some(gated) = extract_openapi_gated(&attrs) {
+        quote!(
+            s.extensions.insert("x_fp_preview_gate".to_string(), serde_json::Value::String(#gated.to_string()));
+        )
+    } else {
+        quote!()
+    };
+
+    let example = if let Some(example) = extract_example(&attrs) {
+        // allow to parse escaped json string or single str value
+        quote!(
+            s.example = serde_json::from_str::<serde_json::Value>(#example).ok().or_else(|| Some(#example.into()));
+        )
+    } else {
+        quote!()
+    };
+
+    quote!(
+        #docs
+        #extensions
+        #example
+    )
+}
+
+/// Adds metadata from the provided `attributes` to the schema defined by `schema_ref`.
+fn add_metadata_to_schema(schema_ref: TokenStream2, metadata: TokenStream2) -> TokenStream2 {
+    if metadata.is_empty() {
+        return quote!(
+            let s = #schema_ref;
+        )
+    }
+    // Add the provided metadata to the schema_ref, either inline or as an allOf
+    quote!(
+        let mut s = #schema_ref;
+        if s.name.is_some() {
+            // Schema is a complex type referred to by a reference.
+            // Use allOf to allow overriding metadata fields
+            s = DefaultSchemaRaw::default();
+            s.all_of.push({
+                let original_s = #schema_ref;
+                Box::new(original_s)
+            });
+            s.all_of.push({
+                // Add metadata as a separate schema
+                let mut s = DefaultSchemaRaw::default();
+                s.data_type = #schema_ref.data_type;
+                #metadata
+                Box::new(s)
+            });
+        } else {
+            // The main schema is a simple type, can just add additional fields inline
+            #metadata
+        }
+    )
+}
+
+
 /// Generates code for a tuple struct with fields.
 fn handle_unnamed_field_struct(
     fields: &FieldsUnnamed,
@@ -1550,15 +1619,12 @@ fn handle_unnamed_field_struct(
         let field = fields.unnamed.iter().next().unwrap();
 
         if let Some(ty_ref) = get_field_type(field) {
-            let docs = extract_documentation(struct_attr);
-            let docs = docs.trim();
-
+            // Generally extract metadata from the parent struct's attributes
+            let metadata = extract_metadata(struct_attr);
             if SerdeSkip::exists(&field.attrs) {
                 props_gen.extend(quote!({
                     let mut s: DefaultSchemaRaw = Default::default();
-                    if !#docs.is_empty() {
-                        s.description = Some(#docs.to_string());
-                    }
+                    #metadata
                     schema = s;
                 }));
             } else {
@@ -1568,11 +1634,10 @@ fn handle_unnamed_field_struct(
                 } else {
                     quote!(#ty_ref::schema_with_ref())
                 };
+
+                let s_definition = add_metadata_to_schema(schema_ref, metadata);
                 props_gen.extend(quote!({
-                    let mut s = #schema_ref;
-                    if !#docs.is_empty() {
-                        s.description = Some(#docs.to_string());
-                    }
+                    #s_definition
                     schema = s;
                 }));
             }
@@ -1589,8 +1654,6 @@ fn handle_unnamed_field_struct(
             let docs = extract_documentation(&field.attrs);
             let docs = docs.trim();
 
-            let override_required = OpenApiRequired::exists(&field.attrs);
-            let override_optional = OpenApiOptional::exists(&field.attrs);
             let inline = OpenApiInline::exists(&field.attrs);
             let schema_ref = if inline {
                 quote!(#ty_ref::raw_schema())
@@ -1599,6 +1662,8 @@ fn handle_unnamed_field_struct(
             };
 
             let gen = if !SerdeFlatten::exists(&field.attrs) {
+                let override_required = OpenApiRequired::exists(&field.attrs);
+                let override_optional = OpenApiOptional::exists(&field.attrs);
                 // this is really not what we'd want to do because that's not how the
                 // deserialized struct will be like, ideally we want an actual tuple
                 // this type should therefore not be used for anything else than `Path`
@@ -1729,30 +1794,6 @@ fn handle_field_struct(
         }
 
         let ty_ref = get_field_type(field);
-
-        let docs = extract_documentation(&field.attrs);
-        let docs = docs.trim();
-
-        // Serialize a custom `x_fp_preview_gate` field that communicates which preview API is needed in order to render this field.
-        let extensions = if let Some(gated) = extract_openapi_gated(&field.attrs) {
-            quote!(
-                s.extensions.insert("x_fp_preview_gate".to_string(), serde_json::Value::String(#gated.to_string()));
-            )
-        } else {
-            quote!()
-        };
-
-        let example = if let Some(example) = extract_example(&field.attrs) {
-            // allow to parse escaped json string or single str value
-            quote!(
-                s.example = serde_json::from_str::<serde_json::Value>(#example).ok().or_else(|| Some(#example.into()));
-            )
-        } else {
-            quote!()
-        };
-
-        let override_required = OpenApiRequired::exists(&field.attrs);
-        let override_optional = OpenApiOptional::exists(&field.attrs);
         let inline = OpenApiInline::exists(&field.attrs);
         let schema_ref = if inline {
             quote!(#ty_ref::raw_schema())
@@ -1761,44 +1802,11 @@ fn handle_field_struct(
         };
 
         let gen = if !SerdeFlatten::exists(&field.attrs) {
-            let has_override_fields = !docs.is_empty() || !extensions.is_empty() || !example.is_empty();
+            let override_required = OpenApiRequired::exists(&field.attrs);
+            let override_optional = OpenApiOptional::exists(&field.attrs);
+            let metadata = extract_metadata(&field.attrs);
+            let s_definition = add_metadata_to_schema(schema_ref, metadata);
 
-            let s_definition = if has_override_fields {
-                quote!(
-                    let mut s = #schema_ref;
-                    if s.name.is_some() {
-                        // Schema is a complex type referred to by a reference.
-                        // Use allOf to allow overriding fields like description, example, etc
-                        s = DefaultSchemaRaw::default();
-                        s.all_of.push({
-                            let original_s = #schema_ref;
-                            Box::new(original_s)
-                        });
-                        s.all_of.push({
-                            // Add additional fields as a separate schema
-                            let mut s = DefaultSchemaRaw::default();
-                            s.data_type = #schema_ref.data_type;
-                            if !#docs.is_empty() {
-                                s.description = Some(#docs.to_string());
-                            }
-                            #extensions
-                            #example
-                            Box::new(s)
-                        });
-                    } else {
-                        // The main schema is a simple type, can just add additional fields inline
-                        if !#docs.is_empty() {
-                            s.description = Some(#docs.to_string());
-                        }
-                        #extensions
-                        #example
-                    }
-                )
-            } else {
-                quote!(
-                    let s = #schema_ref;
-                )
-            };
             quote!({
                 #s_definition
                 schema.properties.insert(#field_name.into(), s.into());
@@ -1916,10 +1924,10 @@ fn handle_enum(
                     inner_gen.extend(quote!(
                         let mut schema = DefaultSchemaRaw {
                             data_type: Some(DataType::Object),
-                            description: if #docs.is_empty() { None } else { Some(#docs.into()) },
                             ..Default::default()
                         };
                     ));
+                    // Description will be added in `handle_unnamed_field_struct`
                     handle_unnamed_field_struct(f, &var.attrs, &mut inner_gen);
                 }
             }
