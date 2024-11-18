@@ -1911,12 +1911,15 @@ fn handle_enum(
                     inner_gen_empty = true;
                 }
                 Fields::Named(ref f) => {
+                    let metadata = extract_metadata(&var.attrs);
                     inner_gen.extend(quote!(
-                        let mut schema = DefaultSchemaRaw {
+                        let mut s = DefaultSchemaRaw {
                             data_type: Some(DataType::Object),
                             description: if #docs.is_empty() { None } else { Some(#docs.into()) },
                             ..Default::default()
                         };
+                        #metadata
+                        let mut schema = s;
                     ));
                     handle_field_struct(f, &[], serde, &mut inner_gen);
                 }
