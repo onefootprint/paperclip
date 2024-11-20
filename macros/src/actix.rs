@@ -1661,34 +1661,38 @@ fn handle_unnamed_field_struct(
                 quote!(#ty_ref::schema_with_ref())
             };
 
-            let gen = if !SerdeFlatten::exists(&field.attrs) {
+            if !SerdeFlatten::exists(&field.attrs) {
                 let override_required = OpenApiRequired::exists(&field.attrs);
                 let override_optional = OpenApiOptional::exists(&field.attrs);
                 // this is really not what we'd want to do because that's not how the
                 // deserialized struct will be like, ideally we want an actual tuple
                 // this type should therefore not be used for anything else than `Path`
-                quote!({
-                    let mut s = #schema_ref;
-                    if !#docs.is_empty() {
-                        s.description = Some(#docs.to_string());
-                    }
-                    schema.properties.insert(#inner_field_id.to_string(), s.into());
-                    if (#ty_ref::required() || #override_required) && !#override_optional {
-                        schema.required.insert(#inner_field_id.to_string());
-                    }
-                })
+                props_gen.extend(
+                    quote!({
+                        let mut s = #schema_ref;
+                        if !#docs.is_empty() {
+                            s.description = Some(#docs.to_string());
+                        }
+                        schema.properties.insert(#inner_field_id.to_string(), s.into());
+                        if (#ty_ref::required() || #override_required) && !#override_optional {
+                            schema.required.insert(#inner_field_id.to_string());
+                        }
+                    })
+                );
             } else {
-                quote!({
-                    let s = #schema_ref;
-                    schema.properties.extend(s.properties);
-
-                    if #ty_ref::required() {
-                        schema.required.extend(s.required);
-                    }
-                })
-            };
-
-            props_gen.extend(gen);
+                props_gen.extend(
+                    quote!({
+                        let mut s = DefaultSchemaRaw::default();
+                        s.all_of.push({
+                            Box::new(schema)
+                        });
+                        s.all_of.push({
+                            Box::new(#schema_ref)
+                        });
+                        schema = s;
+                    })
+                );
+            }
         }
     }
 }
@@ -1801,30 +1805,35 @@ fn handle_field_struct(
             quote!(#ty_ref::schema_with_ref())
         };
 
-        let gen = if !SerdeFlatten::exists(&field.attrs) {
+        if !SerdeFlatten::exists(&field.attrs) {
             let override_required = OpenApiRequired::exists(&field.attrs);
             let override_optional = OpenApiOptional::exists(&field.attrs);
             let metadata = extract_metadata(&field.attrs);
             let s_definition = add_metadata_to_schema(schema_ref, metadata);
 
-            quote!({
-                #s_definition
-                schema.properties.insert(#field_name.into(), s.into());
-                if (#ty_ref::required() || #override_required) && !#override_optional {
-                    schema.required.insert(#field_name.into());
-                }
-            })
+            props_gen.extend(
+                quote!({
+                    #s_definition
+                    schema.properties.insert(#field_name.into(), s.into());
+                    if (#ty_ref::required() || #override_required) && !#override_optional {
+                        schema.required.insert(#field_name.into());
+                    }
+                })
+            );
         } else {
-            quote!({
-                let s = #schema_ref;
-                schema.properties.extend(s.properties);
-                if #ty_ref::required() {
-                    schema.required.extend(s.required);
-                }
-            })
-        };
-
-        props_gen.extend(gen);
+            props_gen.extend(
+                quote!({
+                    let mut s = DefaultSchemaRaw::default();
+                    s.all_of.push({
+                        Box::new(schema)
+                    });
+                    s.all_of.push({
+                        Box::new(#schema_ref)
+                    });
+                    schema = s;
+                })
+            );
+        }
     }
 }
 
