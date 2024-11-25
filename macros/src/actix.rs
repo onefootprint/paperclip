@@ -1680,21 +1680,25 @@ fn handle_unnamed_field_struct(
                     })
                 );
             } else {
-                props_gen.extend(
-                    quote!({
-                        let mut s = DefaultSchemaRaw::default();
-                        s.all_of.push({
-                            Box::new(schema)
-                        });
-                        s.all_of.push({
-                            Box::new(#schema_ref)
-                        });
-                        schema = s;
-                    })
-                );
+                props_gen.extend(flattened_schema(schema_ref));
             }
         }
     }
+}
+
+/// Given a `schema_ref` of a schema who should be serde flattened into a variable of name `schema`, returns
+/// the tokenstream that redefines the `schema` variable as the flattened schema that joins `schema_ref` and `schema`.
+fn flattened_schema(schema_ref: TokenStream2) -> TokenStream2 {
+    quote!({
+        let mut s = DefaultSchemaRaw::default();
+        s.all_of.push({
+            Box::new(schema)
+        });
+        s.all_of.push({
+            Box::new(#schema_ref)
+        });
+        schema = s;
+    })
 }
 
 /// Returns the nested meta for all `#[openapi(...)]`` attributes.
@@ -1821,18 +1825,7 @@ fn handle_field_struct(
                 })
             );
         } else {
-            props_gen.extend(
-                quote!({
-                    let mut s = DefaultSchemaRaw::default();
-                    s.all_of.push({
-                        Box::new(schema)
-                    });
-                    s.all_of.push({
-                        Box::new(#schema_ref)
-                    });
-                    schema = s;
-                })
-            );
+            props_gen.extend(flattened_schema(schema_ref));
         }
     }
 }
