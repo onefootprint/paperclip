@@ -1862,18 +1862,26 @@ fn handle_enum(
             schema.description = Some(#doc.into());
         ));
     }
+    props_gen.extend(quote!(
+        let enum_name = schema.name.clone().unwrap_or_default();
+    ));
 
     for var in &variants {
         if SerdeSkip::exists(&var.attrs) {
             continue;
         }
 
-        let mut name = var.ident.to_string();
-        if let Some(renamed) = SerdeRename::from_field_attrs(&var.attrs) {
-            name = renamed;
+        let original_name = var.ident.to_string();
+        let name = if let Some(renamed) = SerdeRename::from_field_attrs(&var.attrs) {
+            renamed
         } else if let Some(prop) = serde.rename {
-            name = prop.rename(&name);
-        }
+            prop.rename(&original_name)
+        } else {
+            original_name.clone()
+        };
+        props_gen.extend(quote!(
+            let enum_variant_name = format!("{}{}", enum_name, #original_name);
+        ));
 
         if only_simple_constants {
             props_gen.extend(quote!(
@@ -1961,6 +1969,11 @@ fn handle_enum(
                         props_gen.extend(quote!(
                             schema.any_of.push({
                                 #inner_gen
+
+                                // Generate a new type whose name is a function of the enum name + variant name
+                                schema.reference = Some(format!("#/definitions/{}", enum_variant_name));
+                                schema.name = Some(enum_variant_name);
+
                                 schema.properties.insert(#tag.into(), DefaultSchemaRaw {
                                     const_: Some(serde_json::json!(#name)),
                                     ..Default::default()
@@ -1975,6 +1988,9 @@ fn handle_enum(
                         props_gen.extend(quote!(
                             schema.any_of.push({
                                 let mut wrapper_schema = DefaultSchemaRaw::default();
+                                // Generate a new type whose name is a function of the enum name + variant name
+                                wrapper_schema.reference = Some(format!("#/definitions/{}", enum_variant_name));
+                                wrapper_schema.name = Some(enum_variant_name);
                                 // Inner nested data
                                 wrapper_schema.all_of.push({
                                     #inner_gen
@@ -2007,6 +2023,10 @@ fn handle_enum(
                                     data_type: Some(DataType::Object),
                                     ..Default::default()
                                 };
+                                // Generate a new type whose name is a function of the enum name + variant name
+                                schema.reference = Some(format!("#/definitions/{}", enum_variant_name));
+                                schema.name = Some(enum_variant_name);
+
                                 schema.properties.insert(#tag.into(), DefaultSchemaRaw {
                                     const_: Some(serde_json::json!(#name)),
                                     description: if #docs.is_empty() { None } else { Some(#docs.into()) },
@@ -2019,23 +2039,27 @@ fn handle_enum(
                     } else {
                         props_gen.extend(quote!(
                             schema.any_of.push({
-                                let mut schema = DefaultSchemaRaw {
+                                let mut wrapper_schema = DefaultSchemaRaw {
                                     data_type: Some(DataType::Object),
                                     ..Default::default()
                                 };
-                                schema.properties.insert(#tag.into(), DefaultSchemaRaw {
+                                // Generate a new type whose name is a function of the enum name + variant name
+                                wrapper_schema.reference = Some(format!("#/definitions/{}", enum_variant_name));
+                                wrapper_schema.name = Some(enum_variant_name);
+
+                                wrapper_schema.properties.insert(#tag.into(), DefaultSchemaRaw {
                                     const_: Some(serde_json::json!(#name)),
                                     description: if #docs.is_empty() { None } else { Some(#docs.into()) },
                                     ..Default::default()
                                 }.into());
-                                schema.properties.insert(#content_tag.into(), {
+                                wrapper_schema.properties.insert(#content_tag.into(), {
                                     #inner_gen
                                     schema
                                 }.into());
-                                schema.required.insert(#tag.into());
-                                schema.required.insert(#content_tag.into());
+                                wrapper_schema.required.insert(#tag.into());
+                                wrapper_schema.required.insert(#content_tag.into());
 
-                                schema
+                                wrapper_schema
                             }.into());
                         ));
                     }
