@@ -1987,29 +1987,19 @@ fn handle_enum(
                         // internal tag as a separate schema in an allOf.
                         props_gen.extend(quote!(
                             schema.any_of.push({
-                                let mut wrapper_schema = DefaultSchemaRaw::default();
+                                #inner_gen
                                 // Generate a new type whose name is a function of the enum name + variant name
-                                wrapper_schema.reference = Some(format!("#/definitions/{}", enum_variant_name));
-                                wrapper_schema.name = Some(enum_variant_name);
-                                // Inner nested data
-                                wrapper_schema.all_of.push({
-                                    #inner_gen
-                                    Box::new(schema)
-                                });
-                                // Tag
-                                wrapper_schema.all_of.push({
-                                    let mut tag_schema = DefaultSchemaRaw {
-                                        data_type: Some(DataType::Object),
-                                        ..Default::default()
-                                    };
-                                    tag_schema.properties.insert(#tag.into(), DefaultSchemaRaw {
-                                        const_: Some(serde_json::json!(#name)),
-                                        ..Default::default()
-                                    }.into());
-                                    tag_schema.required.insert(#tag.into());
-                                    Box::new(tag_schema)
-                                });
-                                Box::new(wrapper_schema)
+                                schema.reference = Some(format!("#/definitions/{}", enum_variant_name));
+                                schema.name = Some(enum_variant_name);
+
+                                // Add the tag to the existing schema, since we are just definined a new type.
+                                // Note: this won't work if the inner schema is an anyOf enum. We'd have to use allOf here.
+                                schema.properties.insert(#tag.into(), DefaultSchemaRaw {
+                                    const_: Some(serde_json::json!(#name)),
+                                    ..Default::default()
+                                }.into());
+                                schema.required.insert(#tag.into());
+                                schema
                             }.into());
                         ));
                     }
