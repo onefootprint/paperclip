@@ -46,7 +46,7 @@ pub fn api_v2_operation(attr: TokenStream, input: TokenStream) -> TokenStream {
 /// Derive attribute for indicating that a type is an OpenAPI v2 compatible definition.
 #[cfg(feature = "actix")]
 #[proc_macro_error]
-#[proc_macro_derive(Apiv2Schema, attributes(openapi))]
+#[proc_macro_derive(Apiv2Schema, attributes(openapi, serde))]
 pub fn api_v2_schema(input: TokenStream) -> TokenStream {
     self::actix::emit_v2_definition(input, false)
 }
@@ -55,7 +55,7 @@ pub fn api_v2_schema(input: TokenStream) -> TokenStream {
 /// Derive attribute for indicating that a type is an OpenAPI v2 compatible definition used as an HTTP response type.
 #[cfg(feature = "actix")]
 #[proc_macro_error]
-#[proc_macro_derive(Apiv2Response, attributes(openapi))]
+#[proc_macro_derive(Apiv2Response, attributes(openapi, serde))]
 pub fn api_v2_response(input: TokenStream) -> TokenStream {
     self::actix::emit_v2_definition(input, true)
 }
