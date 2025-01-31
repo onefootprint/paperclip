@@ -2210,12 +2210,28 @@ impl SerdeSkip {
     }
 }
 
+/// Custom attribute that sets this struct as "debug," which is an indicator that paperclip should print some
+/// context when compiling the schema.
+#[allow(unused)]
+struct OpenApiDebug;
+
+impl OpenApiDebug {
+    #[allow(unused)]
+    fn exists(field_attrs: &[Attribute]) -> bool {
+        extract_openapi_attrs(field_attrs).any(|nested| {
+            nested.len() == 1
+                && match &nested[0] {
+                    NestedMeta::Meta(Meta::Path(path)) => path.is_ident("debug"),
+                    _ => false,
+                }
+        })
+    }
+}
+
 /// Custom attribute that sets this attribute as required, even if the type is not required.
 struct OpenApiRequired;
 
 impl OpenApiRequired {
-    /// Traverses the field attributes and returns whether the field should be skipped or not
-    /// dependent on finding the `#[serde(skip]` attribute.
     fn exists(field_attrs: &[Attribute]) -> bool {
         extract_openapi_attrs(field_attrs).any(|nested| {
             nested.len() == 1
@@ -2231,8 +2247,6 @@ impl OpenApiRequired {
 struct OpenApiOptional;
 
 impl OpenApiOptional {
-    /// Traverses the field attributes and returns whether the field should be skipped or not
-    /// dependent on finding the `#[serde(skip]` attribute.
     fn exists(field_attrs: &[Attribute]) -> bool {
         extract_openapi_attrs(field_attrs).any(|nested| {
             nested.len() == 1
