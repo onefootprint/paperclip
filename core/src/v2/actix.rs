@@ -465,6 +465,7 @@ macro_rules! impl_param_extractor ({ $ty:ty => $container:ident } => {
                 op.parameters.push(Either::Right(Parameter {
                     in_: ParameterIn::$container,
                     required: def.required.contains(&k),
+                    schema: Some(*v.clone()),
                     data_type: v.data_type,
                     format: v.format,
                     enum_: v.enum_,
@@ -477,9 +478,9 @@ macro_rules! impl_param_extractor ({ $ty:ty => $container:ident } => {
             }
         }
 
-        // These don't require updating definitions, as we use them only
-        // to get their properties.
-        fn update_definitions(_map: &mut BTreeMap<String, DefaultSchemaRaw>) {}
+        fn update_definitions(map: &mut BTreeMap<String, DefaultSchemaRaw>) {
+            update_definitions_from_schema_type::<T>(map);
+        }
     }
 });
 

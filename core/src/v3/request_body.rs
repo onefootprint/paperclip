@@ -1,17 +1,17 @@
 use super::{invalid_referenceor, non_body_parameter_to_v3_parameter, v2, Either};
 
 impl From<v2::DefaultParameterRaw>
-    for Either<openapiv3::Parameter, Either<openapiv3::RequestBody, Option<openapiv3::Schema>>>
+    for Either<openapiv3::Parameter, Either<openapiv3::RequestBody, Option<openapiv3::ReferenceOr<openapiv3::Schema>>>>
 {
     fn from(v2: v2::DefaultParameterRaw) -> Self {
-        let parameter_data = |schema: Option<openapiv3::Schema>| openapiv3::ParameterData {
+        let parameter_data = |schema: Option<openapiv3::ReferenceOr<openapiv3::Schema>>| openapiv3::ParameterData {
             name: v2.name.clone(),
             description: v2.description.clone(),
             required: v2.required,
             deprecated: None,
             format: match &schema {
                 Some(schema) => openapiv3::ParameterSchemaOrContent::Schema(
-                    openapiv3::ReferenceOr::Item(schema.clone()),
+                    schema.clone(),
                 ),
                 None => openapiv3::ParameterSchemaOrContent::Schema(invalid_referenceor(format!(
                     "No Schema found: {:?}",

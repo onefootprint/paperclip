@@ -4,7 +4,10 @@ use super::v2;
 pub(crate) fn non_body_parameter_to_v3_parameter(
     form_data: bool,
     v2: &v2::DefaultParameterRaw,
-) -> Option<openapiv3::Schema> {
+) -> Option<openapiv3::ReferenceOr<openapiv3::Schema>> {
+    if let Some(schema) = &v2.schema {
+        return Some(schema.clone().into());
+    }
     match v2.data_type {
         Some(data_type) => {
             let schema_kind = match data_type {
@@ -169,10 +172,10 @@ pub(crate) fn non_body_parameter_to_v3_parameter(
             schema_data.example = v2.example.clone();
             schema_data.extensions = v2.extensions.clone();
 
-            Some(openapiv3::Schema {
+            Some(openapiv3::ReferenceOr::Item(openapiv3::Schema {
                 schema_data,
                 schema_kind,
-            })
+            }))
         }
         None => None,
     }

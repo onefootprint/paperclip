@@ -14,7 +14,7 @@ impl From<v2::Operation<v2::DefaultParameterRaw, v2::DefaultResponseRaw>> for op
                 Either::Right(parameter) => {
                     let either: Either<
                         openapiv3::Parameter,
-                        Either<openapiv3::RequestBody, Option<openapiv3::Schema>>,
+                        Either<openapiv3::RequestBody, Option<openapiv3::ReferenceOr<openapiv3::Schema>>>,
                     > = parameter.clone().into();
                     match either {
                         Either::Right(r) => match r {
@@ -23,10 +23,14 @@ impl From<v2::Operation<v2::DefaultParameterRaw, v2::DefaultResponseRaw>> for op
                                 None
                             }
                             Either::Right(Some(schema)) => {
+                                let boxed_item = match schema {
+                                    openapiv3::ReferenceOr::Item(schema) => openapiv3::ReferenceOr::Item(Box::new(schema)),
+                                    openapiv3::ReferenceOr::Reference{ reference } => openapiv3::ReferenceOr::Reference{ reference },
+                                };
                                 if let Some(any) = form_data.as_mut() {
                                     any.properties.insert(
                                         parameter.name.clone(),
-                                        openapiv3::ReferenceOr::Item(Box::new(schema)),
+                                        boxed_item,
                                     );
                                 } else {
                                     let mut any = openapiv3::AnySchema::default();
@@ -35,7 +39,7 @@ impl From<v2::Operation<v2::DefaultParameterRaw, v2::DefaultResponseRaw>> for op
                                     }
                                     any.properties.insert(
                                         parameter.name.clone(),
-                                        openapiv3::ReferenceOr::Item(Box::new(schema)),
+                                        boxed_item,
                                     );
                                     form_data = Some(any);
                                 }
