@@ -457,6 +457,24 @@ impl<'a, T: Apiv2Schema> Apiv2Schema for &'a [T] {
     }
 }
 
+impl<T: Apiv2Schema> Apiv2Schema for Box<T> {
+    fn name() -> Option<String> {
+        T::name()
+    }
+
+    fn raw_schema() -> DefaultSchemaRaw {
+        T::raw_schema()
+    }
+
+    fn security_scheme() -> Option<SecurityScheme> {
+        T::security_scheme()
+    }
+
+    fn header_parameter_schema() -> Vec<Parameter<DefaultSchemaRaw>> {
+        T::header_parameter_schema()
+    }
+}
+
 macro_rules! impl_schema_array {
     ($ty:ty) => {
         impl<T: Apiv2Schema> Apiv2Schema for $ty {
