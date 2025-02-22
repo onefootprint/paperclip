@@ -821,6 +821,21 @@ fn extract_is_inline(attrs: &[Attribute]) -> bool {
     false
 }
 
+fn extract_is_collapsed(attrs: &[Attribute]) -> bool {
+    let attrs = extract_openapi_attrs(attrs);
+    for attr in attrs.flat_map(|attr| attr.into_iter()) {
+        if let NestedMeta::Meta(Meta::Path(attr_path)) = attr {
+            if let Some(attr) = attr_path.get_ident() {
+                if *attr == "collapsed" {
+                    return true;
+                }
+            }
+        }
+    }
+
+    false
+}
+
 fn extract_serialize_as(attrs: &[Attribute]) -> Option<Type> {
     let attrs = extract_openapi_attrs(attrs);
     for attr in attrs.flat_map(|attr| attr.into_iter()) {
@@ -1551,10 +1566,16 @@ fn extract_metadata(attrs: &[Attribute]) -> TokenStream2 {
     };
 
     // Serialize a custom `x_fp_preview_gate` field that communicates which preview API is needed in order to render this field.
-    let extensions = if let Some(gated) = extract_openapi_gated(&attrs) {
+    let preview_gate = if let Some(gated) = extract_openapi_gated(&attrs) {
         quote!(
             s.extensions.insert("x_fp_preview_gate".to_string(), serde_json::Value::String(#gated.to_string()));
         )
+    } else {
+        quote!()
+    };
+
+    let collapsed = if extract_is_collapsed(&attrs) {
+        quote!(s.extensions.insert("x_fp_collapsed".to_string(), serde_json::Value::Bool(true));)
     } else {
         quote!()
     };
@@ -1570,7 +1591,8 @@ fn extract_metadata(attrs: &[Attribute]) -> TokenStream2 {
 
     quote!(
         #docs
-        #extensions
+        #preview_gate
+        #collapsed
         #example
     )
 }
