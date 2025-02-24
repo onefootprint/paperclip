@@ -836,6 +836,29 @@ fn extract_is_collapsed(attrs: &[Attribute]) -> bool {
     false
 }
 
+fn extract_priority(attrs: &[Attribute]) -> Option<u32> {
+    let attrs = extract_openapi_attrs(attrs);
+    for attr in attrs.flat_map(|attr| attr.into_iter()) {
+        if let NestedMeta::Meta(Meta::NameValue(nv)) = attr {
+            if nv.path.is_ident("priority") {
+                if let Lit::Int(s) = nv.lit {
+                    return Some(s.base10_parse::<u32>().unwrap());
+                } else {
+                    emit_error!(
+                        nv.lit.span().unwrap(),
+                        format!(
+                            "`#[{}(priority = \"...\")]` expects a u32 argument",
+                            SCHEMA_MACRO_ATTR
+                        ),
+                    );
+                }
+            }
+        }
+    }
+
+    None
+}
+
 fn extract_serialize_as(attrs: &[Attribute]) -> Option<Type> {
     let attrs = extract_openapi_attrs(attrs);
     for attr in attrs.flat_map(|attr| attr.into_iter()) {
@@ -1580,6 +1603,12 @@ fn extract_metadata(attrs: &[Attribute]) -> TokenStream2 {
         quote!()
     };
 
+    let priority = if let Some(priority) = extract_priority(&attrs) {
+        quote!(s.extensions.insert("x_fp_priority".to_string(), serde_json::Value::Number(priority.into()));)
+    } else {
+        quote!()
+    };
+
     let example = if let Some(example) = extract_example(&attrs) {
         // allow to parse escaped json string or single str value
         quote!(
@@ -1593,6 +1622,7 @@ fn extract_metadata(attrs: &[Attribute]) -> TokenStream2 {
         #docs
         #preview_gate
         #collapsed
+        #priority
         #example
     )
 }
@@ -1996,10 +2026,12 @@ fn handle_enum(
                                 schema.reference = Some(format!("#/definitions/{}", enum_variant_name));
                                 schema.name = Some(enum_variant_name);
 
-                                schema.properties.insert(#tag.into(), DefaultSchemaRaw {
+                                let mut tag_schema = DefaultSchemaRaw {
                                     const_: Some(serde_json::json!(#name)),
                                     ..Default::default()
-                                }.into());
+                                };
+                                tag_schema.extensions.insert("x_fp_priority".to_string(), serde_json::Value::Number(0.into()));
+                                schema.properties.insert(#tag.into(), tag_schema.into());
                                 schema.required.insert(#tag.into());
                                 schema
                             }.into());
@@ -2016,10 +2048,12 @@ fn handle_enum(
 
                                 // Add the tag to the existing schema, since we are just definined a new type.
                                 // Note: this won't work if the inner schema is an anyOf enum. We'd have to use allOf here.
-                                schema.properties.insert(#tag.into(), DefaultSchemaRaw {
+                                let mut tag_schema = DefaultSchemaRaw {
                                     const_: Some(serde_json::json!(#name)),
                                     ..Default::default()
-                                }.into());
+                                };
+                                tag_schema.extensions.insert("x_fp_priority".to_string(), serde_json::Value::Number(0.into()));
+                                schema.properties.insert(#tag.into(), tag_schema.into());
                                 schema.required.insert(#tag.into());
                                 schema
                             }.into());
