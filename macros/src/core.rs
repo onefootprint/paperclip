@@ -65,7 +65,7 @@ pub fn emit_v2_schema_struct(input: TokenStream) -> TokenStream {
 
                 if self.reference.is_some() {
                     self.reference = None;
-                    removed_refs.push((self.name.clone().unwrap(), self.clone()));
+                    removed_refs.push((self.name.clone().expect("Missing name. Did you omit the name field in a DefaultSchemaRaw?"), self.clone()));
                 }
 
                 for s in self.properties.values_mut() {
