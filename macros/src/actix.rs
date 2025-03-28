@@ -1604,7 +1604,7 @@ fn extract_metadata(attrs: &[Attribute]) -> TokenStream2 {
     };
 
     let priority = if let Some(priority) = extract_priority(&attrs) {
-        quote!(s.extensions.insert("x_fp_priority".to_string(), serde_json::Value::Number(priority.into()));)
+        quote!(s.extensions.insert("x_fp_priority".to_string(), serde_json::Value::Number(#priority.into()));)
     } else {
         quote!()
     };
@@ -2042,19 +2042,37 @@ fn handle_enum(
                         props_gen.extend(quote!(
                             schema.any_of.push({
                                 #inner_gen
-                                // Generate a new type whose name is a function of the enum name + variant name
-                                schema.reference = Some(format!("#/definitions/{}", enum_variant_name));
-                                schema.name = Some(enum_variant_name);
-
-                                // Add the tag to the existing schema, since we are just definined a new type.
-                                // Note: this won't work if the inner schema is an anyOf enum. We'd have to use allOf here.
+                                // Add the tag to the existing schema, since we just definined a new type.
                                 let mut tag_schema = DefaultSchemaRaw {
                                     const_: Some(serde_json::json!(#name)),
                                     ..Default::default()
                                 };
                                 tag_schema.extensions.insert("x_fp_priority".to_string(), serde_json::Value::Number(0.into()));
-                                schema.properties.insert(#tag.into(), tag_schema.into());
-                                schema.required.insert(#tag.into());
+
+                                let mut schema = if schema.any_of.is_empty() {
+                                    schema.properties.insert(#tag.into(), tag_schema.into());
+                                    schema.required.insert(#tag.into());
+                                    schema
+                                } else {
+                                    // If the inner schema is an anyOf, we need to wrap our new enum variant in an allOf
+                                    let mut wrapper_all_of_schema = DefaultSchemaRaw::default();
+
+                                    wrapper_all_of_schema.all_of.push(schema.into());
+                                    wrapper_all_of_schema.all_of.push({
+                                        let mut wrapper_schema_for_tag = DefaultSchemaRaw {
+                                            data_type: Some(DataType::Object),
+                                            ..Default::default()
+                                        };
+                                        wrapper_schema_for_tag.properties.insert(#tag.into(), tag_schema.into());
+                                        wrapper_schema_for_tag.required.insert(#tag.into());
+                                        wrapper_schema_for_tag.into()
+                                    });
+                                    wrapper_all_of_schema
+                                };
+
+                                // Generate a new type whose name is a function of the enum name + variant name
+                                schema.reference = Some(format!("#/definitions/{}", enum_variant_name));
+                                schema.name = Some(enum_variant_name);
                                 schema
                             }.into());
                         ));
