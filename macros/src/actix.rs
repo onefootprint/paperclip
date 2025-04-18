@@ -1973,14 +1973,12 @@ fn handle_enum(
                     inner_gen_empty = true;
                 }
                 Fields::Named(ref f) => {
-                    let metadata = extract_metadata(&var.attrs);
                     inner_gen.extend(quote!(
                         let mut s = DefaultSchemaRaw {
                             data_type: Some(DataType::Object),
                             description: if #docs.is_empty() { None } else { Some(#docs.into()) },
                             ..Default::default()
                         };
-                        #metadata
                         let mut schema = s;
                     ));
                     handle_field_struct(f, &[], serde, &mut inner_gen);
@@ -2049,7 +2047,20 @@ fn handle_enum(
                                 };
                                 tag_schema.extensions.insert("x_fp_priority".to_string(), serde_json::Value::Number(0.into()));
 
-                                let mut schema = if schema.any_of.is_empty() {
+                                let mut schema = if !schema.all_of.is_empty() {
+                                    // This inner schema is an allOf, we can just add the tag onto it as a new allOf component
+                                    schema.all_of.push({
+                                        let mut wrapper_schema_for_tag = DefaultSchemaRaw {
+                                            data_type: Some(DataType::Object),
+                                            ..Default::default()
+                                        };
+                                        wrapper_schema_for_tag.properties.insert(#tag.into(), tag_schema.into());
+                                        wrapper_schema_for_tag.required.insert(#tag.into());
+                                        wrapper_schema_for_tag.into()
+                                    });
+                                    schema
+                                } else if schema.any_of.is_empty() {
+                                    // If the inner schema is a normal object, we can just add the tag to the properties
                                     schema.properties.insert(#tag.into(), tag_schema.into());
                                     schema.required.insert(#tag.into());
                                     schema
