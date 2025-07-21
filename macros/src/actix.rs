@@ -2512,10 +2512,14 @@ impl super::Method {
     ) -> syn::Result<proc_macro2::TokenStream> {
         let uri: proc_macro2::TokenStream = Self::handler_uri(attr).into();
         let handler_name = Self::handler_name(item.clone())?;
-        let handler_fn: proc_macro2::TokenStream = item.into();
+        let handler_name_str = handler_name.to_string();
+
+        let mut handler_fn: ItemFn = syn::parse(item)?;
+        let default_span = proc_macro2::Span::call_site();
+        handler_fn.sig.ident = Ident::new(&format!("{}_fn", handler_fn.sig.ident), default_span);
+
         let method: proc_macro2::TokenStream = self.method().parse()?;
         let variant: proc_macro2::TokenStream = self.variant().parse()?;
-        let handler_name_str = handler_name.to_string();
 
         let uri = uri.to_string().replace('\"', ""); // The uri is a string lit, which contains quotes, remove them
 
@@ -2525,17 +2529,20 @@ impl super::Method {
             uri
         };
 
+        let handler_fn_name = handler_fn.sig.ident.clone();
+
         Ok(quote! {
+            #handler_fn
+
             #[allow(non_camel_case_types, missing_docs)]
             pub struct #handler_name;
 
             impl #handler_name {
                 fn resource() -> paperclip::actix::web::Resource {
-                    #handler_fn
                     paperclip::actix::web::Resource::new(#uri_fmt)
                         .name(#handler_name_str)
                         .guard(actix_web::guard::#variant())
-                        .route(paperclip::actix::web::#method().to(#handler_name))
+                        .route(paperclip::actix::web::#method().to(#handler_fn_name))
                 }
             }
 
