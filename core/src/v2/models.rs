@@ -674,6 +674,7 @@ pub enum ParameterIn {
     Path,
     FormData,
     Body,
+    MultipartFormData,
 }
 
 /// Possible formats for array values in parameter.

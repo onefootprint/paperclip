@@ -1,28 +1,29 @@
 use super::{invalid_referenceor, non_body_parameter_to_v3_parameter, v2, Either};
 
 impl From<v2::DefaultParameterRaw>
-    for Either<openapiv3::Parameter, Either<openapiv3::RequestBody, Option<openapiv3::ReferenceOr<openapiv3::Schema>>>>
+    for Either<
+        openapiv3::Parameter,
+        Either<openapiv3::RequestBody, Option<openapiv3::ReferenceOr<openapiv3::Schema>>>,
+    >
 {
     fn from(v2: v2::DefaultParameterRaw) -> Self {
-        let parameter_data = |schema: Option<openapiv3::ReferenceOr<openapiv3::Schema>>| openapiv3::ParameterData {
-            name: v2.name.clone(),
-            description: v2.description.clone(),
-            required: v2.required,
-            deprecated: None,
-            format: match &schema {
-                Some(schema) => openapiv3::ParameterSchemaOrContent::Schema(
-                    schema.clone(),
-                ),
-                None => openapiv3::ParameterSchemaOrContent::Schema(invalid_referenceor(format!(
-                    "No Schema found: {:?}",
-                    v2
-                ))),
-            },
-            example: None,
-            examples: indexmap::IndexMap::new(),
-            explode: None,
-            extensions: indexmap::IndexMap::new(),
-        };
+        let parameter_data =
+            |schema: Option<openapiv3::ReferenceOr<openapiv3::Schema>>| openapiv3::ParameterData {
+                name: v2.name.clone(),
+                description: v2.description.clone(),
+                required: v2.required,
+                deprecated: None,
+                format: match &schema {
+                    Some(schema) => openapiv3::ParameterSchemaOrContent::Schema(schema.clone()),
+                    None => openapiv3::ParameterSchemaOrContent::Schema(invalid_referenceor(
+                        format!("No Schema found: {:?}", v2),
+                    )),
+                },
+                example: None,
+                examples: indexmap::IndexMap::new(),
+                explode: None,
+                extensions: indexmap::IndexMap::new(),
+            };
 
         match v2.in_ {
             v2::ParameterIn::Query => Either::Left(openapiv3::Parameter::Query {
@@ -56,6 +57,22 @@ impl From<v2::DefaultParameterRaw>
                 required: v2.required,
                 extensions: indexmap::IndexMap::new(),
             })),
+            v2::ParameterIn::MultipartFormData => {
+                Either::Right(Either::Left(openapiv3::RequestBody {
+                    description: v2.description,
+                    content: {
+                        let media = openapiv3::MediaType {
+                            schema: v2.schema.map(|s| s.into()),
+                            ..Default::default()
+                        };
+                        let mut map = indexmap::IndexMap::new();
+                        map.insert("multipart/form-data".to_string(), media);
+                        map
+                    },
+                    required: v2.required,
+                    extensions: indexmap::IndexMap::new(),
+                }))
+            }
         }
     }
 }
