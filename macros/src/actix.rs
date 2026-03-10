@@ -982,14 +982,18 @@ pub fn emit_v2_definition(input: TokenStream, for_response: bool) -> TokenStream
     let schema_name = if type_params.is_empty() {
         quote! { #base_name }
     } else {
-        let type_names = quote! {
-            [#(#type_params::name()),*]
+        quote! { {
+            let type_names = [#(#type_params::name()),*]
                 .iter()
                 .filter_map(|n| n.to_owned())
                 .collect::<Vec<String>>()
-                .join(", ")
-        };
-        quote! { format!("{}<{}>", #base_name, #type_names) }
+                .join(", ");
+            if type_names.is_empty() {
+                #base_name.to_string()
+            } else {
+                format!("{}<{}>", #base_name, type_names)
+            }
+        } }
     };
     let props_gen_empty = props_gen.is_empty();
 
