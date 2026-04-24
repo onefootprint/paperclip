@@ -836,6 +836,70 @@ fn extract_is_collapsed(attrs: &[Attribute]) -> bool {
     false
 }
 
+/// Collects generic OpenAPI vendor extensions declared with
+/// `#[openapi(x_name = value)]`, where the attribute name starts with `x_`.
+/// Supports bool, int, and string literal values; invalid lit types emit a
+/// compile error. Returns token streams that insert each pair into `s.extensions`
+/// at schema-build time.
+///
+/// Usage on a field:
+/// ```ignore
+/// #[openapi(x_fp_preserve_keys = true)]
+/// pub value: SomeType,
+/// ```
+///
+/// Emits `x_fp_preserve_keys: true` as a vendor extension on the property.
+fn extract_x_extensions(attrs: &[Attribute]) -> Vec<TokenStream2> {
+    let mut out = Vec::new();
+    let attrs = extract_openapi_attrs(attrs);
+    for attr in attrs.flat_map(|attr| attr.into_iter()) {
+        if let NestedMeta::Meta(Meta::NameValue(nv)) = attr {
+            let Some(ident) = nv.path.get_ident() else {
+                continue;
+            };
+            let name = ident.to_string();
+            if !name.starts_with("x_") {
+                continue;
+            }
+            let value_tokens = match &nv.lit {
+                Lit::Bool(b) => {
+                    let v = b.value;
+                    quote!(serde_json::Value::Bool(#v))
+                }
+                Lit::Int(i) => {
+                    let parsed = i.base10_parse::<i64>();
+                    match parsed {
+                        Ok(v) => quote!(serde_json::Value::Number(#v.into())),
+                        Err(_) => {
+                            emit_error!(
+                                nv.lit.span().unwrap(),
+                                format!("`#[{}({} = ...)]` expects an i64-parsable integer", SCHEMA_MACRO_ATTR, name),
+                            );
+                            continue;
+                        }
+                    }
+                }
+                Lit::Str(s) => {
+                    let v = s.value();
+                    quote!(serde_json::Value::String(#v.to_string()))
+                }
+                _ => {
+                    emit_error!(
+                        nv.lit.span().unwrap(),
+                        format!(
+                            "`#[{}({} = ...)]` only supports bool, int, or string values",
+                            SCHEMA_MACRO_ATTR, name
+                        ),
+                    );
+                    continue;
+                }
+            };
+            out.push(quote!(s.extensions.insert(#name.to_string(), #value_tokens);));
+        }
+    }
+    out
+}
+
 fn extract_priority(attrs: &[Attribute]) -> Option<u32> {
     let attrs = extract_openapi_attrs(attrs);
     for attr in attrs.flat_map(|attr| attr.into_iter()) {
@@ -1607,6 +1671,8 @@ fn extract_metadata(attrs: &[Attribute]) -> TokenStream2 {
         quote!()
     };
 
+    let x_extensions = extract_x_extensions(&attrs);
+
     let priority = if let Some(priority) = extract_priority(&attrs) {
         quote!(s.extensions.insert("x_fp_priority".to_string(), serde_json::Value::Number(#priority.into()));)
     } else {
@@ -1626,6 +1692,7 @@ fn extract_metadata(attrs: &[Attribute]) -> TokenStream2 {
         #docs
         #preview_gate
         #collapsed
+        #(#x_extensions)*
         #priority
         #example
     )
