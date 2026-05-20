@@ -1073,6 +1073,13 @@ pub fn emit_v2_definition(input: TokenStream, for_response: bool) -> TokenStream
         quote! { Some(Self::__paperclip_schema_name()) }
     };
 
+    // Type-level `#[openapi(x_* = ...)]` vendor extensions. `extract_x_extensions`
+    // emits statements referencing a local named `s`, so bind one before splicing.
+    let type_x_extensions = extract_x_extensions(&item_ast.attrs);
+    let apply_type_x_extensions = quote! {
+        { let s = &mut schema; #(#type_x_extensions)* }
+    };
+
     let default_schema_raw_def = quote! {
         let mut schema = DefaultSchemaRaw {
             name: #open_api_name,
@@ -1135,6 +1142,7 @@ pub fn emit_v2_definition(input: TokenStream, for_response: bool) -> TokenStream
                 if !#props_gen_empty {
                     schema.name = #open_api_name;
                 }
+                #apply_type_x_extensions
                 schema
             }
         }
