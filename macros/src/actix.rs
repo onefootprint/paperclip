@@ -968,6 +968,53 @@ fn extract_serialize_as(attrs: &[Attribute]) -> Option<Type> {
     None
 }
 
+/// Reads `#[openapi(schema_as = "path::to::Type")]`, returning the target type whose
+/// `Apiv2Schema`/`OperationModifier` impls the deriving type should delegate to.
+fn extract_schema_as(attrs: &[Attribute]) -> Option<Type> {
+    let attrs = extract_openapi_attrs(attrs);
+    for attr in attrs.flat_map(|attr| attr.into_iter()) {
+        let nv = match attr {
+            NestedMeta::Meta(Meta::NameValue(nv)) if nv.path.is_ident("schema_as") => nv,
+            _ => continue,
+        };
+        let Lit::Str(ref s) = nv.lit else {
+            emit_error!(
+                nv.lit.span().unwrap(),
+                format!(
+                    "`#[{}(schema_as = \"...\")]` expects a string argument",
+                    SCHEMA_MACRO_ATTR
+                ),
+            );
+            return None;
+        };
+
+        let Ok(ts) = proc_macro::TokenStream::from_str(&s.value()) else {
+            emit_error!(
+                nv.lit.span().unwrap(),
+                format!(
+                    "`#[{}(schema_as = \"...\")]` expects a string argument parseable as a tokenstream",
+                    SCHEMA_MACRO_ATTR
+                ),
+            );
+            return None;
+        };
+        let Ok(ty) = syn::parse::<Type>(ts) else {
+            emit_error!(
+                nv.lit.span().unwrap(),
+                format!(
+                    "`#[{}(schema_as = \"...\")]` expects a string argument parseable as a Type",
+                    SCHEMA_MACRO_ATTR
+                ),
+            );
+            return None;
+        };
+
+        return Some(ty);
+    }
+
+    None
+}
+
 /// Actual parser and emitter for `api_v2_schema` macro.
 pub fn emit_v2_definition(input: TokenStream, for_response: bool) -> TokenStream {
     let item_ast = match crate::expect_struct_or_enum(input) {
@@ -977,6 +1024,10 @@ pub fn emit_v2_definition(input: TokenStream, for_response: bool) -> TokenStream
 
     if let Some(empty) = check_empty_schema(&item_ast) {
         return empty;
+    }
+
+    if let Some(schema_as) = check_schema_as(&item_ast) {
+        return schema_as;
     }
 
     let docs = extract_documentation(&item_ast.attrs);
@@ -1893,6 +1944,76 @@ fn check_empty_schema(item_ast: &DeriveInput) -> Option<TokenStream> {
     }
 
     None
+}
+
+/// Checks for `#[openapi(schema_as = "...")]` and, if present, generates a full delegating
+/// impl of both `Apiv2Schema` and `OperationModifier` that forwards every method to the
+/// named type. `OperationModifier` must be delegated explicitly: the default derive path
+/// emits an empty impl that falls back to the trait defaults rather than the target's
+/// behavior.
+fn check_schema_as(item_ast: &DeriveInput) -> Option<TokenStream> {
+    let target = extract_schema_as(&item_ast.attrs)?;
+
+    let name = &item_ast.ident;
+    let generics = item_ast.generics.clone();
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
+    Some(
+        quote!(
+            impl #impl_generics paperclip::v2::schema::Apiv2Schema for #name #ty_generics #where_clause {
+                fn name() -> Option<String> {
+                    <#target as paperclip::v2::schema::Apiv2Schema>::name()
+                }
+
+                fn description() -> &'static str {
+                    <#target as paperclip::v2::schema::Apiv2Schema>::description()
+                }
+
+                fn required() -> bool {
+                    <#target as paperclip::v2::schema::Apiv2Schema>::required()
+                }
+
+                fn raw_schema() -> paperclip::v2::models::DefaultSchemaRaw {
+                    <#target as paperclip::v2::schema::Apiv2Schema>::raw_schema()
+                }
+
+                fn schema_with_ref() -> paperclip::v2::models::DefaultSchemaRaw {
+                    <#target as paperclip::v2::schema::Apiv2Schema>::schema_with_ref()
+                }
+
+                fn security_scheme() -> Option<paperclip::v2::models::SecurityScheme> {
+                    <#target as paperclip::v2::schema::Apiv2Schema>::security_scheme()
+                }
+
+                fn header_parameter_schema() -> Vec<paperclip::v2::models::Parameter<paperclip::v2::models::DefaultSchemaRaw>> {
+                    <#target as paperclip::v2::schema::Apiv2Schema>::header_parameter_schema()
+                }
+            }
+
+            impl #impl_generics paperclip::actix::OperationModifier for #name #ty_generics #where_clause {
+                fn update_parameter(op: &mut paperclip::v2::models::DefaultOperationRaw) {
+                    <#target as paperclip::actix::OperationModifier>::update_parameter(op)
+                }
+
+                fn update_response(op: &mut paperclip::v2::models::DefaultOperationRaw) {
+                    <#target as paperclip::actix::OperationModifier>::update_response(op)
+                }
+
+                fn update_definitions(map: &mut std::collections::BTreeMap<String, paperclip::v2::models::DefaultSchemaRaw>) {
+                    <#target as paperclip::actix::OperationModifier>::update_definitions(map)
+                }
+
+                fn update_security(op: &mut paperclip::v2::models::DefaultOperationRaw) {
+                    <#target as paperclip::actix::OperationModifier>::update_security(op)
+                }
+
+                fn update_security_definitions(map: &mut std::collections::BTreeMap<String, paperclip::v2::models::SecurityScheme>) {
+                    <#target as paperclip::actix::OperationModifier>::update_security_definitions(map)
+                }
+            }
+        )
+        .into(),
+    )
 }
 
 /// Generates code for a struct with fields.

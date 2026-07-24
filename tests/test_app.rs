@@ -3522,6 +3522,81 @@ fn test_custom_extractor_empty_schema() {
 }
 
 #[test]
+fn test_schema_as_passthrough() {
+    #[derive(Deserialize, Serialize, Apiv2Schema)]
+    struct SchemaAsBase {
+        foo: String,
+        bar: u32,
+    }
+
+    // Its OpenAPI schema (and operation wiring) is delegated entirely to `SchemaAsBase`.
+    #[derive(Deserialize, Serialize, Apiv2Schema)]
+    #[openapi(schema_as = "SchemaAsBase")]
+    struct SchemaAsWrapper(SchemaAsBase);
+
+    #[api_v2_operation]
+    fn echo(
+        body: web::Json<SchemaAsWrapper>,
+    ) -> impl Future<Output = Result<web::Json<SchemaAsWrapper>, Error>> {
+        fut_ok(body)
+    }
+
+    run_and_check_app(
+        || {
+            App::new()
+                .wrap_api()
+                .with_json_spec_at("/api/spec")
+                .service(web::resource("/echo").route(web::post().to(echo)))
+                .build()
+        },
+        |addr| {
+            let resp = CLIENT
+                .get(&format!("http://{}/api/spec", addr))
+                .send()
+                .expect("request failed?");
+
+            // The wrapper contributes the `SchemaAsBase` definition and both its request/response
+            // `$ref` point at it, proving `Apiv2Schema` and `OperationModifier` both delegate.
+            check_json(
+                resp,
+                json!({
+                  "definitions": {
+                    "SchemaAsBase": {
+                      "type": "object",
+                      "properties": {
+                        "bar": { "format": "int32", "type": "integer" },
+                        "foo": { "type": "string" }
+                      },
+                      "required": ["bar", "foo"]
+                    }
+                  },
+                  "info": { "title": "", "version": "" },
+                  "paths": {
+                    "/echo": {
+                      "post": {
+                        "parameters": [{
+                          "in": "body",
+                          "name": "body",
+                          "required": true,
+                          "schema": { "$ref": "#/definitions/SchemaAsBase" }
+                        }],
+                        "responses": {
+                          "200": {
+                            "description": "OK",
+                            "schema": { "$ref": "#/definitions/SchemaAsBase" }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "swagger": "2.0"
+                }),
+            );
+        },
+    );
+}
+
+#[test]
 fn test_errors_app() {
     use actix_web::{
         error::{ErrorBadRequest, ResponseError},
